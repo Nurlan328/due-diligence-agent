@@ -2,7 +2,7 @@
 
 Tests never call the Claude API (the model function is a scripted stub) and
 never touch the network (page fetches go through httpx.MockTransport), so the
-suite needs no keys. Logs are redirected to a temp dir.
+suite needs no keys. The store (audit, match features, jobs) is a temp SQLite file.
 """
 from types import SimpleNamespace
 
@@ -15,8 +15,7 @@ from models import Subject
 
 @pytest.fixture(autouse=True)
 def tmp_logs(tmp_path, monkeypatch):
-    monkeypatch.setattr(settings, "AUDIT_LOG", str(tmp_path / "audit.jsonl"))
-    monkeypatch.setattr(settings, "MATCH_LOG", str(tmp_path / "match.jsonl"))
+    monkeypatch.setattr(settings, "DB_PATH", str(tmp_path / "dd.sqlite"))
     monkeypatch.setattr(settings, "DATA_DIR", str(tmp_path / "data"))
     return tmp_path
 

@@ -19,7 +19,7 @@ search engine. They stay local and are only used to confirm identity in fetched
 pages (matching.py). The model gets the name, city, birth year and related names.
 """
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
 from anthropic import Anthropic
@@ -117,7 +117,8 @@ RECORD_TOOL: dict[str, Any] = {
                     "properties": {
                         "url": {"type": "string"},
                         "title": {"type": "string"},
-                        "published": {"type": "string", "description": "Publication or decision date, empty if unknown"},
+                        "published": {"type": "string",
+                                      "description": "Publication or decision date, empty if unknown"},
                         "source_name": {"type": "string"},
                         "category": {"type": "string", "enum": [c.value for c in Category]},
                         "status": {"type": "string", "enum": [s.value for s in Status]},
@@ -186,6 +187,45 @@ class RecordInput(BaseModel):
 
 
 @dataclass
+class Usage:
+    """Tokens and server-tool calls across every API request of a screening, and their cost."""
+
+    requests: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_input_tokens: int = 0
+    cache_creation_input_tokens: int = 0
+    web_search_requests: int = 0
+    web_fetch_requests: int = 0
+
+    def add(self, usage: Any) -> None:
+        """Add one response's `usage` (missing fields count as 0: fallbacks and stubs may omit them)."""
+        self.requests += 1
+        if usage is None:
+            return
+        for name in ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"):
+            setattr(self, name, getattr(self, name) + (getattr(usage, name, 0) or 0))
+        tools = getattr(usage, "server_tool_use", None)
+        if tools is not None:
+            self.web_search_requests += getattr(tools, "web_search_requests", 0) or 0
+            self.web_fetch_requests += getattr(tools, "web_fetch_requests", 0) or 0
+
+    def merge(self, other: "Usage") -> None:
+        for name in self.__dataclass_fields__:
+            setattr(self, name, getattr(self, name) + getattr(other, name))
+
+    def cost_usd(self) -> float:
+        s = settings
+        tokens = (self.input_tokens * s.PRICE_INPUT_PER_MTOK + self.output_tokens * s.PRICE_OUTPUT_PER_MTOK
+                  + self.cache_read_input_tokens * s.PRICE_CACHE_READ_PER_MTOK
+                  + self.cache_creation_input_tokens * s.PRICE_CACHE_WRITE_PER_MTOK) / 1_000_000
+        return round(tokens + self.web_search_requests * s.PRICE_WEB_SEARCH_PER_1K / 1000, 4)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {**asdict(self), "cost_usd": self.cost_usd()}
+
+
+@dataclass
 class ResearchResult:
     findings: list[Finding] = field(default_factory=list)
     leads: list[Lead] = field(default_factory=list)
@@ -193,6 +233,7 @@ class ResearchResult:
     notes: list[str] = field(default_factory=list)
     rounds: int = 0
     graph: EntityGraph | None = None
+    usage: Usage = field(default_factory=Usage)
 
 
 # (request kwargs) -> final Message. Injected so tests run without the API.
@@ -276,6 +317,7 @@ def run_round(prompt: str, model_fn: ModelFn) -> ResearchResult:
     messages: list = [{"role": "user", "content": prompt}]
     for _ in range(settings.MAX_AGENT_TURNS):
         response = model_fn(**_request(messages))
+        out.usage.add(getattr(response, "usage", None))
         out.queries += _queries(response.content)
         # Append-only history: the assistant turn goes back exactly as received.
         messages.append({"role": "assistant", "content": response.content})
@@ -342,6 +384,7 @@ def deep_search(subject: Subject, model_fn: ModelFn | None = None,
         graph.mark_explored([graph.subject_id] + [n.id for n in pivots])
         result = run_round(prompt, model_fn)
         total.rounds = round_no
+        total.usage.merge(result.usage)
         total.queries += result.queries
         total.notes += [f"раунд {round_no}: {n}" for n in result.notes]
 

@@ -7,7 +7,7 @@ folded) covering the stem (all cases), the adjective, the region and Latin
 spellings.
 """
 import re
-from functools import lru_cache
+from functools import cache
 
 from names import fold
 
@@ -37,7 +37,7 @@ CITIES: dict[str, list[str]] = {
 }
 
 
-@lru_cache(maxsize=None)
+@cache
 def _pattern(city: str) -> re.Pattern:
     return re.compile(r"(?<!\w)(?:" + "|".join(CITIES[city]) + ")")
 

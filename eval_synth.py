@@ -20,6 +20,7 @@ import argparse
 import json
 import random
 from collections import Counter
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -128,7 +129,7 @@ def bin_for(rng: random.Random) -> str:
     return f"{rng.randint(5, 24):02d}{rng.randint(1, 12):02d}4{rng.randint(0, 9)}{rng.randint(0, 999999):06d}"
 
 
-def company_name(rng: random.Random, exclude: set[str] = frozenset()) -> tuple[str, str]:
+def company_name(rng: random.Random, exclude: Collection[str] = ()) -> tuple[str, str]:
     while True:
         a, b = rng.choice(COMPANY_A), rng.choice(COMPANY_B)
         if f"{a} {b}" not in exclude:
@@ -214,7 +215,8 @@ def p_full_bare(p, rng):
 
 def n_surname_only(p, rng):
     city = other(rng, CITIES, p.city)
-    return p.surname_g, f"В {city[1]} предприниматель {p.surname_g} {ev(p, rng.randrange(len(EVENTS)))}. {filler(rng)}", 0
+    event = ev(p, rng.randrange(len(EVENTS)))
+    return p.surname_g, f"В {city[1]} предприниматель {p.surname_g} {event}. {filler(rng)}", 0
 
 
 def n_other_given(p, rng):
@@ -406,8 +408,11 @@ def generate(per_trap: int = 25, seed: int = 13, test_share: float = 0.5) -> lis
     rng = random.Random(seed)
     cases: list[dict] = []
     # One subject per (trap, i); the split is drawn per subject.
-    for kind, traps, make, to_subject in [("p", PERSON_TRAPS, new_person, person_subject),
-                                          ("c", COMPANY_TRAPS, new_company, company_subject)]:
+    groups: list[tuple[str, list[Callable], Callable, Callable]] = [
+        ("p", PERSON_TRAPS, new_person, person_subject),
+        ("c", COMPANY_TRAPS, new_company, company_subject),
+    ]
+    for kind, traps, make, to_subject in groups:
         for trap in traps:
             for i in range(per_trap):
                 entity = make(rng)

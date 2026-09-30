@@ -34,6 +34,11 @@ def plural(n: int, one: str, few: str, many: str) -> str:
     return f"{n} {many}"
 
 
+def _num(n: int) -> str:
+    """12345 -> '12 345' (Russian thousands separator)."""
+    return f"{n:,}".replace(",", " ")
+
+
 def _md(text: str) -> str:
     return text.replace("|", "\\|").replace("\n", " ").strip()
 
@@ -47,6 +52,7 @@ def _source_line(f: Finding) -> str:
     if f.archive_url:
         parts.append(f"[архив]({f.archive_url})")
     parts.append(f"идентификация {f.match_score:.0%}")
+    parts.append(f"id `{f.id}`")  # for `python cli.py label <id> same|namesake`
     line = "  - " + ", ".join(parts)
     if f.quote:
         quote = _md(f.quote)
@@ -134,7 +140,14 @@ def render(report: Report) -> str:
 
     out += ["## Проверенные источники", "", "| Источник | Статус | Совпадений | Примечание |", "|---|---|---|---|"]
     out += [f"| {_md(c.name)} | {c.status} | {c.hits} | {_md(c.note)} |" for c in report.sources]
-    out += ["", f"Раундов глубокого поиска: {report.rounds}, поисковых запросов: {len(report.queries)}."]
+    out += ["", f"Раундов глубокого поиска: {report.rounds}, поисковых запросов: {len(report.queries)}, "
+                f"время проверки: {report.duration_s:.0f} с."]
+    if report.usage:
+        u = report.usage
+        out += ["", f"Стоимость (оценка): **${u['cost_usd']:.2f}**: запросов к модели {u['requests']}, "
+                    f"токенов на входе {_num(u['input_tokens'])} (+ из кэша {_num(u['cache_read_input_tokens'])}), "
+                    f"на выходе {_num(u['output_tokens'])}, веб-поисков {u['web_search_requests']}, "
+                    f"открытых страниц {u['web_fetch_requests']}."]
     if report.queries:
         out += ["", "<details><summary>Поисковые запросы</summary>", ""]
         out += [f"- {_md(q)}" for q in report.queries]

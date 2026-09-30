@@ -125,7 +125,7 @@ def verify_findings(findings: list[Finding], http: httpx.Client | None = None,
     snapshots: dict[str, tuple[str, str | None] | None] = {}
     try:
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            pages = dict(zip(urls, pool.map(lambda u: fetch_text(u, http), urls)))
+            pages = dict(zip(urls, pool.map(lambda u: fetch_text(u, http), urls), strict=True))
         for f in findings:
             if f.source_type != "web":
                 continue
@@ -136,8 +136,9 @@ def verify_findings(findings: list[Finding], http: httpx.Client | None = None,
             if archive:
                 try:
                     if _check_archive(f, http, snapshots):
-                        if text is None:
-                            pages[f.url] = snapshots[f.url][1]  # the matcher reads the archived page
+                        entry = snapshots[f.url]
+                        if text is None and entry is not None:
+                            pages[f.url] = entry[1]  # the matcher reads the archived page
                         continue
                 except ArchiveUnavailable:
                     # Circuit breaker: don't wait out the timeout once per finding.

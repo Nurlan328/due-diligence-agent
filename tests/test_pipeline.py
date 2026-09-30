@@ -4,6 +4,7 @@ from conftest import ScriptedModel, block, message, mock_http
 from fastapi.testclient import TestClient
 
 import pipeline
+import store
 from models import Category, Finding, SourceCheck, Status, Verification
 from pipeline import screen
 
@@ -63,7 +64,7 @@ def test_end_to_end_company(company, tmp_logs):
     assert report.queries == ["q"]
     assert "Возможные однофамильцы" in report.markdown and "fake registry" in report.markdown
 
-    audit = [json.loads(l) for l in (tmp_logs / "audit.jsonl").read_text(encoding="utf-8").splitlines()]
+    audit = store.audit_events(report.request_id)
     assert [a["event"] for a in audit] == ["screen_started", "screen_finished"]
     assert audit[1]["queries"] == ["q"] and audit[0]["purpose"] == company.purpose
 
@@ -72,8 +73,7 @@ def test_person_report_masks_iin(person, tmp_logs):
     report = screen(person, operator="tester", collectors=[], deep=False)
     assert report.risk_level == "none"
     assert person.identifier not in report.markdown and "********0123" in report.markdown
-    audit = (tmp_logs / "audit.jsonl").read_text(encoding="utf-8")
-    assert person.identifier not in audit
+    assert person.identifier not in json.dumps(store.audit_events(), ensure_ascii=False)
 
 
 def test_api(company, monkeypatch):

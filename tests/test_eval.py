@@ -4,6 +4,7 @@ from collections import defaultdict
 
 import eval_synth
 import evaluate
+import store
 from evaluate import GOLDEN_PATH, auc, average_precision, confusion, load, tune
 from models import Finding, Subject
 
@@ -70,11 +71,14 @@ def test_report_renders(tmp_path):
     assert "## Per trap type" in report and "heuristic / golden" in report
 
 
-def test_match_log_eval(tmp_path):
-    row = {"name_score": 0.8, "name_reason": "r", "id_in_text": False, "registry_id_lookup": False,
-           "city_in_text": True, "related_hits": 0, "birth_year_in_text": False, "short_company_name": False,
-           "llm_evidence_count": 0, "page_fetched": True, "subject_type": "person"}
-    log = tmp_path / "m.jsonl"
-    log.write_text("\n".join(json.dumps({**row, "label": lab}) for lab in (1, 0, None)), encoding="utf-8")
-    out = evaluate.evaluate_match_log(log)
-    assert "| heuristic | 2 |" in out
+def test_labelled_eval():
+    feats = {"name_score": 0.8, "name_reason": "r", "id_in_text": False, "registry_id_lookup": False,
+             "city_in_text": True, "related_hits": 0, "birth_year_in_text": False, "short_company_name": False,
+             "llm_evidence_count": 0, "page_fetched": True}
+    assert "No labelled findings" in evaluate.evaluate_labelled()
+    store.add_match_rows([{"request_id": "r", "finding_id": f"f{i}", "subject_type": "person", "score": 0.9,
+                           "features": feats} for i in range(3)])
+    store.set_label("f0", 1, reviewer="a")
+    store.set_label("f1", 0, reviewer="a")
+    out = evaluate.evaluate_labelled()
+    assert "| heuristic | 2 |" in out  # the unlabelled row is left out

@@ -109,17 +109,14 @@ def run_demo(out_dir: str | Path | None = None, scenario: dict | None = None) ->
     out = Path(out_dir or settings.REPORTS_DIR)
     out.mkdir(parents=True, exist_ok=True)
     tiers = sc.get("tiers", {})
-    logs = Path(settings.DATA_DIR) / "demo"
-    logs.mkdir(parents=True, exist_ok=True)
     with _overrides(
         # The demo's fictional outlets get the tiers real ones would have.
         OFFICIAL_EXTRA=tiers.get("official_extra", []),
         MAJOR_MEDIA_EXTRA=tiers.get("major_media_extra", []),
         LOW_EXTRA=tiers.get("low_extra", []),
         ARCHIVE_ENABLED=True,
-        # Keep demo runs out of the real audit trail and the matcher's training log.
-        AUDIT_LOG=str(logs / "audit.jsonl"),
-        MATCH_LOG=str(logs / "match_features.jsonl"),
+        # Keep demo runs out of the real audit trail and the matcher's training data.
+        DB_PATH=str(Path(settings.DATA_DIR) / "demo" / "dd.sqlite"),
     ):
         collectors = [ReplayRegistry(r["name"], r["findings"], r.get("note", "")) for r in sc["registries"]]
         report = screen(Subject(**sc["subject"]), operator="demo", collectors=collectors,

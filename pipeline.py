@@ -4,7 +4,9 @@ A plain sequence of stages: every stage is a function over the findings list, so
 each can be tested and evaluated on its own. The multi-round loop and the entity
 graph live inside deep_search().
 """
+import time
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, datetime
 
 import httpx
@@ -45,7 +47,7 @@ def match_all(subject: Subject, findings: list[Finding], pages: dict, graph: Ent
             by_about.setdefault(f.about, []).append(f)
     for name, group in by_about.items():
         nid = graph.find(name) if graph else None
-        kind = graph.nodes[nid].kind if nid else "other"
+        kind = graph.nodes[nid].kind if graph is not None and nid else "other"
         if kind in ("company", "person"):
             affiliate = Subject(type=SubjectType.COMPANY if kind == "company" else SubjectType.PERSON,
                                 name=name, purpose=subject.purpose)
@@ -56,10 +58,11 @@ def match_all(subject: Subject, findings: list[Finding], pages: dict, graph: Ent
                 f.match_reasons = ["связь установлена агентом, идентичность по имени не проверялась"]
 
 
-def screen(subject: Subject, operator: str, *, collectors: list[Collector] | None = None,
+def screen(subject: Subject, operator: str, *, collectors: Sequence[Collector] | None = None,
            model_fn: ModelFn | None = None, http: httpx.Client | None = None,
            deep: bool = True, max_rounds: int | None = None) -> Report:
     request_id = uuid.uuid4().hex[:12]
+    started = time.monotonic()
     audit.log_event("screen_started", request_id, subject, operator, deep_search=deep)
 
     findings: list[Finding] = []
@@ -71,11 +74,15 @@ def screen(subject: Subject, operator: str, *, collectors: list[Collector] | Non
 
     queries: list[str] = []
     rounds = 0
+    usage: dict = {}
     graph: EntityGraph | None = None
     if deep:
         research = deep_search(subject, model_fn=model_fn, max_rounds=max_rounds)
         findings += research.findings
         queries, rounds, graph = research.queries, research.rounds, research.graph
+        # Stand-in models (tests, demo) report no tokens: show nothing rather than a fake $0.
+        if research.usage.input_tokens or research.usage.output_tokens:
+            usage = research.usage.to_dict()
         sources.append(SourceCheck(
             name="Глубокий веб-поиск (Claude web search)", status="ok", hits=len(research.findings),
             note="; ".join(research.notes)[:300]))
@@ -103,10 +110,11 @@ def screen(subject: Subject, operator: str, *, collectors: list[Collector] | Non
         request_id=request_id, created_at=datetime.now(UTC), subject=subject,
         risk_score=score, risk_level=level, findings=matched, facts=facts,
         possible_namesakes=sorted(namesakes, key=lambda f: -f.match_score),
-        sources=sources, queries=queries, rounds=rounds, graph=graph_dict,
+        sources=sources, queries=queries, rounds=rounds, graph=graph_dict, usage=usage,
+        duration_s=round(time.monotonic() - started, 1),
     )
     report.markdown = render(report)
     audit.log_event("screen_finished", request_id, subject, operator, risk_level=level,
                     risk_score=score, facts=len(facts), findings=len(matched), namesakes=len(namesakes),
-                    queries=queries)
+                    queries=queries, usage=usage, duration_s=report.duration_s)
     return report

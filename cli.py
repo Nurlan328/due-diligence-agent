@@ -51,6 +51,18 @@ def _demo(args: argparse.Namespace) -> int:
     return 0
 
 
+def _label(args: argparse.Namespace) -> int:
+    import store
+
+    n = store.set_label(args.finding_id, 1 if args.decision == "same" else 0, reviewer=args.reviewer,
+                        request_id=args.request_id)
+    if not n:
+        print(f"no stored finding with id {args.finding_id}", file=sys.stderr)
+        return 1
+    print(f"labelled {n} finding(s) as {args.decision}")
+    return 0
+
+
 def _update_sanctions(_: argparse.Namespace) -> int:
     from sources.sanctions import download
 
@@ -86,6 +98,13 @@ def main(argv: list[str] | None = None) -> int:
 
     u = sub.add_parser("update-sanctions", help="download the OpenSanctions export")
     u.set_defaults(func=_update_sanctions)
+
+    lb = sub.add_parser("label", help="record a reviewer's identity decision for a finding (training data)")
+    lb.add_argument("finding_id", help="the `id` shown next to each source in the report")
+    lb.add_argument("decision", choices=["same", "namesake"], help="same entity as the subject, or a namesake")
+    lb.add_argument("--request-id", help="limit to one screening (a finding id can recur across screenings)")
+    lb.add_argument("--reviewer", default=getpass.getuser())
+    lb.set_defaults(func=_label)
 
     args = p.parse_args(argv)
     return args.func(args)

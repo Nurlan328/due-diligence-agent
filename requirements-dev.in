@@ -1,0 +1,6 @@
+# Test and lint tools, constrained to the runtime lock:
+#   uv pip compile --universal --python-version 3.12 requirements-dev.in -o requirements-dev.txt
+-c requirements.txt
+pytest
+ruff
+mypy

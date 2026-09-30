@@ -67,10 +67,19 @@ class Settings(BaseSettings):
     # --- Storage ---
     DATA_DIR: str = "data"
     REPORTS_DIR: str = "reports"
-    # Every screening is logged: who, when, why, which queries went out.
-    AUDIT_LOG: str = "data/audit.jsonl"
-    # Identity-matching features + outcome per finding: the training set for a learned matcher.
-    MATCH_LOG: str = "data/match_features.jsonl"
+    # SQLite (store.py): the audit trail (who, when, why, which queries went out), identity-matching
+    # features with reviewer labels (the training set for a learned matcher), and API jobs.
+    DB_PATH: str = "data/dd.sqlite"
+
+    # --- API ---
+    JOB_WORKERS: int = 2  # screenings running at once in the background (POST /jobs)
+
+    # --- Cost accounting (USD). Check current pricing; a refusal fallback bills at the other model's rates.
+    PRICE_INPUT_PER_MTOK: float = 4.0
+    PRICE_OUTPUT_PER_MTOK: float = 20.0
+    PRICE_CACHE_READ_PER_MTOK: float = 0.2
+    PRICE_CACHE_WRITE_PER_MTOK: float = 5.0
+    PRICE_WEB_SEARCH_PER_1K: float = 10.0
 
 
 settings = Settings()

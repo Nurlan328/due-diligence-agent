@@ -1,0 +1,37 @@
+[project]
+name = "due-diligence-agent"
+version = "0.1.0"
+description = "Adverse-media and KYC screening agent for Kazakhstan"
+requires-python = ">=3.12"
+# Dependencies live in requirements.in (top level) and requirements.txt (the lock).
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = [".venv", "data", "reports"]
+
+[tool.ruff.lint]
+# pycodestyle, pyflakes, isort, bugbear, pyupgrade
+select = ["E", "W", "F", "I", "B", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+# Test helpers are imported from conftest by name.
+"tests/*" = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["."]
+exclude = ["^\\.venv/", "^data/", "^reports/", "^build/"]
+check_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+plugins = ["pydantic.mypy"]
+# Third-party packages without type information.
+[[tool.mypy.overrides]]
+module = ["trafilatura", "trafilatura.*", "pymorphy3", "pymorphy3.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

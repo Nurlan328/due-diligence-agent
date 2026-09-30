@@ -1,6 +1,5 @@
 from models import Subject
-from names import (company_similarity, person_similarity, search_variants, skeleton,
-                   strip_legal_form)
+from names import company_similarity, person_similarity, search_variants, skeleton, strip_legal_form
 
 
 def test_skeleton_folds_kazakh_letters_and_latin_spellings():

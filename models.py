@@ -161,4 +161,6 @@ class Report(BaseModel):
     queries: list[str]  # web searches the agent ran
     rounds: int
     graph: dict = {}  # entity graph: {"nodes": [...], "edges": [...]}
+    usage: dict = {}  # API requests, tokens, web searches and estimated cost (deepsearch.Usage)
+    duration_s: float = 0.0  # wall-clock time of the whole screening
     markdown: str = ""

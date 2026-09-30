@@ -1,4 +1,5 @@
 """The offline demo runs end to end and exercises every stage it claims to show."""
+import store
 from config import settings
 from demo import load_scenario, run_demo
 from models import Verification
@@ -26,9 +27,10 @@ def test_demo_runs_offline_and_shows_each_stage(tmp_path):
 
 
 def test_demo_leaves_settings_and_real_logs_alone(tmp_path):
-    before = (settings.MAJOR_MEDIA_EXTRA, settings.AUDIT_LOG, settings.MATCH_LOG)
+    before = (settings.MAJOR_MEDIA_EXTRA, settings.DB_PATH)
     run_demo(tmp_path)
-    assert (settings.MAJOR_MEDIA_EXTRA, settings.AUDIT_LOG, settings.MATCH_LOG) == before
+    assert (settings.MAJOR_MEDIA_EXTRA, settings.DB_PATH) == before
+    assert store.audit_events() == [] and store.match_rows() == []  # the demo wrote to its own DB
 
 
 def test_scenario_is_fictional():

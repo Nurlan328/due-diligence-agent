@@ -17,12 +17,12 @@ second synthetic draw with another seed, the hand-written golden set and the
 hand-written holdout sets: holdout (its errors drove v3, so no longer independent)
 and holdout2 (written before v3, never used to change it).
 All are synthetic: they check the matcher's logic, not real-world accuracy. For
-that, label real findings in data/match_features.jsonl (label 1 / 0) and run
-with --match-log.
+that, reviewers label real findings (`python cli.py label <finding_id> same|namesake`)
+and --labelled scores the matcher on them.
 
   python evaluate.py                      # synth (generated if missing) + golden + holdout -> evals/RESULTS.md
   python evaluate.py --no-write
-  python evaluate.py --match-log data/match_features.jsonl
+  python evaluate.py --labelled [DB_PATH]  # reviewer-labelled real findings from the store
 """
 import argparse
 import json
@@ -30,11 +30,11 @@ from collections import defaultdict
 from dataclasses import fields, replace
 from datetime import date
 from pathlib import Path
-from types import SimpleNamespace
 
+import store
 from config import settings
 from matching import MatchFeatures, features, score
-from models import Finding, Subject
+from models import Finding, Subject, SubjectType
 from names import name_similarity
 
 SYNTH_PATH = Path(settings.DATA_DIR) / "eval" / "identity_synth.jsonl"
@@ -81,10 +81,10 @@ MATCHERS = {"name_only": name_only, "heuristic_for_only": heuristic_for_only, "h
 # --- metrics (pure python: the set is small) -----------------------------------------------------
 
 def confusion(labels: list[int], scores: list[float], thr: float) -> dict:
-    tp = sum(1 for y, s in zip(labels, scores) if y == 1 and s >= thr)
-    fn = sum(1 for y, s in zip(labels, scores) if y == 1 and s < thr)
-    fp = sum(1 for y, s in zip(labels, scores) if y == 0 and s >= thr)
-    tn = sum(1 for y, s in zip(labels, scores) if y == 0 and s < thr)
+    tp = sum(1 for y, s in zip(labels, scores, strict=True) if y == 1 and s >= thr)
+    fn = sum(1 for y, s in zip(labels, scores, strict=True) if y == 1 and s < thr)
+    fp = sum(1 for y, s in zip(labels, scores, strict=True) if y == 0 and s >= thr)
+    tn = sum(1 for y, s in zip(labels, scores, strict=True) if y == 0 and s < thr)
     precision = tp / (tp + fp) if tp + fp else 0.0
     recall = tp / (tp + fn) if tp + fn else 0.0
     f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
@@ -95,8 +95,8 @@ def confusion(labels: list[int], scores: list[float], thr: float) -> dict:
 
 def auc(labels: list[int], scores: list[float]) -> float:
     """Probability that a random positive outranks a random negative (ties count half)."""
-    pos = [s for y, s in zip(labels, scores) if y == 1]
-    neg = [s for y, s in zip(labels, scores) if y == 0]
+    pos = [s for y, s in zip(labels, scores, strict=True) if y == 1]
+    neg = [s for y, s in zip(labels, scores, strict=True) if y == 0]
     if not pos or not neg:
         return float("nan")
     wins = sum(1.0 if p > n else 0.5 if p == n else 0.0 for p in pos for n in neg)
@@ -104,7 +104,7 @@ def auc(labels: list[int], scores: list[float]) -> float:
 
 
 def average_precision(labels: list[int], scores: list[float]) -> float:
-    ranked = sorted(zip(scores, labels), key=lambda t: -t[0])
+    ranked = sorted(zip(scores, labels, strict=True), key=lambda t: -t[0])
     hits, total, ap = 0, sum(labels), 0.0
     for i, (_, y) in enumerate(ranked, 1):
         if y == 1:
@@ -147,7 +147,7 @@ def per_trap_table(cases: list[dict], results: dict, thr: float) -> list[str]:
     for trap, idx in groups.items():
         label = cases[idx[0]]["label"]
 
-        def correct(name: str) -> float:
+        def correct(name: str, idx: list[int] = idx, label: int = label) -> float:
             return sum(1 for i in idx if (results[name][i][0] >= thr) == (label == 1)) / len(idx)
 
         mean = sum(results["heuristic"][i][0] for i in idx) / len(idx)
@@ -160,7 +160,7 @@ def per_trap_table(cases: list[dict], results: dict, thr: float) -> list[str]:
 
 def error_lines(cases: list[dict], results: dict, thr: float, limit: int = 12) -> list[str]:
     errs = []
-    for c, (s, reasons) in zip(cases, results["heuristic"]):
+    for c, (s, reasons) in zip(cases, results["heuristic"], strict=True):
         if (s >= thr) != (c["label"] == 1):
             errs.append((abs(s - thr), c, s, reasons))
     errs.sort(key=lambda t: -t[0])
@@ -224,7 +224,7 @@ def evaluate_sets(synth: list[dict], hand: dict[str, list[dict]], fresh: list[di
                 "| case | trap | truth | name_only | for_only | heuristic | verdict |",
                 "|---|---|---|---|---|---|---|"]
         for c, (sn, _), (sf, _), (sh, _) in zip(cases, res["name_only"], res["heuristic_for_only"],
-                                                res["heuristic"]):
+                                                res["heuristic"], strict=True):
             ok = (sh >= thr) == (c["label"] == 1)
             out.append(f"| {c['id']} | {c['trap']} | {'same' if c['label'] else 'namesake'} | {sn:.2f} "
                        f"| {sf:.2f} | {sh:.2f} | {'ok' if ok else '**error**'} |")
@@ -236,18 +236,25 @@ def evaluate_sets(synth: list[dict], hand: dict[str, list[dict]], fresh: list[di
     return "\n".join(out) + "\n"
 
 
-def evaluate_match_log(path: Path) -> str:
-    """Real findings labelled by reviewers: recompute the scores from the logged features."""
+def _stub_subject(subject_type: str) -> Subject:
+    """score() only reads the subject's type; logged rows carry nothing else."""
+    return Subject(type=SubjectType(subject_type), name="logged subject", purpose="evaluation of logged features")
+
+
+def evaluate_labelled(db_path: str | None = None) -> str:
+    """Real findings labelled by reviewers: recompute the scores from the stored features, so a
+    changed matcher is measured on the same findings."""
     names = {f.name for f in fields(MatchFeatures)}
-    rows = [r for r in load(path) if r.get("label") in (0, 1)]
+    rows = store.match_rows(labelled_only=True, path=db_path)
+    source = db_path or settings.DB_PATH
     if not rows:
-        return f"No labelled rows in {path}: set \"label\" to 1 (same entity) or 0 (namesake)."
+        return f"No labelled findings in {source}: label them with `python cli.py label <finding_id> same|namesake`."
     labels = [int(r["label"]) for r in rows]
-    heur = [score(MatchFeatures(**{k: r[k] for k in names if k in r}), SimpleNamespace(type=r["subject_type"]))[0]
+    heur = [score(MatchFeatures(**{k: r[k] for k in names if k in r}), _stub_subject(r["subject_type"]))[0]
             for r in rows]
     name = [r["name_score"] for r in rows]
     thr = settings.MATCH_THRESHOLD
-    return "\n".join([f"# Labelled findings from {path}", "", HEADER,
+    return "\n".join([f"# Reviewer-labelled findings from {source}", "", HEADER,
                       summary_row("name_only", labels, name, thr), summary_row("heuristic", labels, heur, thr)])
 
 
@@ -261,13 +268,14 @@ def main() -> None:
     p.add_argument("--golden", default=str(GOLDEN_PATH))
     p.add_argument("--holdout", default=str(HOLDOUT_PATH))
     p.add_argument("--holdout2", default=str(HOLDOUT2_PATH))
-    p.add_argument("--match-log", help="evaluate on reviewer-labelled rows of match_features.jsonl instead")
+    p.add_argument("--labelled", nargs="?", const="", metavar="DB_PATH",
+                   help="evaluate on reviewer-labelled real findings in the store instead (default DB_PATH)")
     p.add_argument("--no-write", action="store_true", help=f"print only, do not update {RESULTS_PATH}")
     args = p.parse_args()
     settings.REFERENCE_DATE = settings.REFERENCE_DATE or EVAL_DATE
 
-    if args.match_log:
-        print(evaluate_match_log(Path(args.match_log)))
+    if args.labelled is not None:
+        print(evaluate_labelled(args.labelled or None))
         return
     import eval_synth
 

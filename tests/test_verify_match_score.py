@@ -1,8 +1,9 @@
-import json
+
 from datetime import date
 
 from conftest import mock_http
 
+import store
 from config import settings
 from matching import features, match_findings, score
 from models import Finding, Severity, Status, Verification
@@ -53,11 +54,17 @@ def test_context_lifts_partial_name(person):
     assert "совпадает город" in reasons
 
 
-def test_match_log_written(company, tmp_logs):
+def test_match_features_stored_and_labelled(company):
     f = web()
     match_findings(company, [f], {f.url: "текст"}, request_id="r1")
-    row = json.loads((tmp_logs / "match.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    (row,) = store.match_rows()
     assert row["request_id"] == "r1" and row["label"] is None and "name_score" in row
+    assert store.set_label(f.id, 0, reviewer="analyst") == 1
+    (row,) = store.match_rows(labelled_only=True)
+    assert row["label"] == 0 and row["labelled_by"] == "analyst"
+    # a re-run of the same screening does not duplicate the row
+    match_findings(company, [f], {f.url: "текст"}, request_id="r1")
+    assert len(store.match_rows()) == 1
 
 
 def test_risk_weights_and_noisy_or():

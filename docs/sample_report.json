@@ -1,6 +1,6 @@
 {
-  "request_id": "e5f52390b3f0",
-  "created_at": "2026-09-30T05:23:53.526432Z",
+  "request_id": "4d57baacc61e",
+  "created_at": "2026-09-30T07:08:27.726134Z",
   "subject": {
     "type": "company",
     "name": "ТОО «Ромашка Строй»",
@@ -459,5 +459,7 @@
       }
     ],
     "mermaid": "flowchart LR\n  n0[\"ТОО «Ромашка Строй»\"]\n  n1[\"Примеров Ержан Болатович\"]\n  n2[\"ТОО «Василёк Инвест»\"]\n  n0 -->|\"директор\"| n1\n  n0 -->|\"учредитель\"| n2\n  style n0 stroke:#c0392b,stroke-width:3px\n  style n1 stroke:#c0392b,stroke-width:2px\n  style n2 stroke:#c0392b,stroke-width:2px"
-  }
+  },
+  "usage": {},
+  "duration_s": 5.9
 }

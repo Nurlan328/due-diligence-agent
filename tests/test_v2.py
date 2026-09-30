@@ -190,7 +190,7 @@ def test_removed_page_verified_from_archive():
     pages = verify_findings([f], http=wayback_http({}, "Вчера директор задержан по делу о хищении."), archive=True)
     assert f.verification == Verification.VERIFIED_ARCHIVE
     assert f.archive_url.startswith("https://web.archive.org/")
-    assert "задержан" in pages[f.url]  # the matcher reads the archived copy
+    assert "задержан" in (pages[f.url] or "")  # the matcher reads the archived copy
 
 
 def test_edited_page_quote_only_in_archive():

@@ -1,0 +1,16 @@
+.git
+.github
+.venv
+.idea
+.env
+__pycache__
+*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+# Personal data and local state never go into the image.
+data
+reports
+docs
+tests
+evals

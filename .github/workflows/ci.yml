@@ -21,9 +21,17 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
+          cache-dependency-path: requirements*.txt
 
+      # Pinned lock files (requirements.in -> requirements.txt via `uv pip compile --universal`).
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Type check (mypy)
+        run: mypy
 
       # Offline: Claude is a scripted stub, pages and Wayback go through httpx.MockTransport.
       - name: Tests
@@ -48,3 +56,29 @@ jobs:
         with:
           name: sample-report
           path: demo-output/
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t due-diligence-agent:ci .
+
+      # The container starts, answers /health and runs a background job end to end
+      # (registries only: no API key in CI).
+      - name: Smoke test
+        run: |
+          docker run -d --name dd -p 8000:8000 due-diligence-agent:ci
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8000/health && break; sleep 1; done
+          job=$(curl -sf -X POST http://127.0.0.1:8000/jobs -H 'Content-Type: application/json' \
+            -d '{"subject":{"type":"company","name":"Demo LLP","identifier":"123456789012","purpose":"CI container smoke test"},"operator":"ci","deep":false}' \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["job_id"])')
+          for i in $(seq 1 30); do
+            status=$(curl -sf http://127.0.0.1:8000/jobs/$job | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])')
+            echo "job $job: $status"
+            [ "$status" = done ] && exit 0
+            [ "$status" = failed ] && { docker logs dd; exit 1; }
+            sleep 1
+          done
+          docker logs dd; exit 1

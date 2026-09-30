@@ -1,0 +1,9 @@
+# Top-level runtime dependencies. The pinned lock file is requirements.txt:
+#   uv pip compile --universal --python-version 3.12 requirements.in -o requirements.txt
+anthropic>=1.9,<2   # Claude API: deep search agent (web_search / web_fetch server tools)
+fastapi[standard]
+pydantic-settings
+httpx               # page fetches for quote verification, goszakup API
+trafilatura         # main-text extraction from news pages
+rapidfuzz           # fuzzy name and quote matching
+pymorphy3           # Russian morphology: inflected names and cities (pure Python)

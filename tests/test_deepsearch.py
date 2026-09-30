@@ -112,3 +112,29 @@ def test_person_iin_and_birth_date_never_sent(person):
 
 def test_company_bin_is_sent(company):
     assert company.identifier in subject_brief(company)
+
+
+def test_usage_and_cost_are_accumulated(monkeypatch, company):
+    from types import SimpleNamespace
+
+    from deepsearch import Usage
+
+    def usage(inp, out, searches):
+        return SimpleNamespace(input_tokens=inp, output_tokens=out, cache_read_input_tokens=1000,
+                               cache_creation_input_tokens=0,
+                               server_tool_use=SimpleNamespace(web_search_requests=searches, web_fetch_requests=1))
+
+    first = message("tool_use", record("t1", [FINDING]))
+    first.usage = usage(10_000, 2_000, 3)
+    last = message("end_turn", block("text", text="ok"))
+    last.usage = usage(5_000, 500, 0)
+    out = deep_search(company, model_fn=ScriptedModel(first, last), max_rounds=1)
+    u = out.usage
+    assert (u.requests, u.input_tokens, u.output_tokens, u.web_search_requests, u.web_fetch_requests) == \
+        (2, 15_000, 2_500, 3, 2)
+    for name, price in [("PRICE_INPUT_PER_MTOK", 4.0), ("PRICE_OUTPUT_PER_MTOK", 20.0),
+                        ("PRICE_CACHE_READ_PER_MTOK", 0.2), ("PRICE_WEB_SEARCH_PER_1K", 10.0)]:
+        monkeypatch.setattr(settings, name, price)
+    # 15k*4 + 2.5k*20 + 2k*0.2 per MTok = 0.06 + 0.05 + 0.0004; 3 searches = 0.03
+    assert u.cost_usd() == 0.1404
+    assert Usage().to_dict()["cost_usd"] == 0

@@ -52,8 +52,9 @@ Subject (type, name, БИН/ИИН, birth date, city, related names, purpose)
   │     severity × status × evidence strength × recency (× 0.5 for affiliates),
   │     noisy-OR across facts.
   │
-  └─ 6. Report + audit trail       report.py, audit.py
-        Markdown / JSON, entity graph (Mermaid), sources checked with no hits.
+  └─ 6. Report + audit trail       report.py, audit.py, store.py
+        Markdown / JSON, entity graph (Mermaid), sources checked with no hits,
+        cost and time of the screening; audit trail and match features in SQLite.
 ```
 
 | module | what |
@@ -69,8 +70,9 @@ Subject (type, name, БИН/ИИН, birth date, city, related names, purpose)
 | `reliability.py` | source tiers and recency decay |
 | `scoring.py` | grouping findings into facts, corroboration, risk |
 | `pipeline.py` | the stages in order |
+| `store.py` | SQLite: audit trail, identity features with reviewer labels, API jobs |
 | `eval_synth.py`, `evaluate.py`, `evals/` | namesake evaluation sets and harness |
-| `cli.py`, `main.py` | command line and FastAPI |
+| `cli.py`, `main.py` | command line (screen, demo, label) and FastAPI (async jobs) |
 
 ## OSINT in this project
 
@@ -123,9 +125,11 @@ below the threshold are shown separately for a human to review instead of being
 thrown away.
 
 **A transparent baseline before a model.** The identity matcher is a heuristic
-on purpose. Every feature vector goes to `data/match_features.jsonl` with an
-empty `label`. Once reviewers label findings as same / different entity, that
-log is the training set for a learned matcher, evaluated against this baseline.
+on purpose. Every feature vector is stored with an empty label, and each source
+in the report shows its finding `id`. A reviewer records the decision with
+`python cli.py label <id> same|namesake`, and `python evaluate.py --labelled`
+scores the matcher on the labelled real findings. Those rows are the training
+set for a learned matcher, evaluated against this baseline.
 
 ## Privacy and legal basis
 
@@ -134,8 +138,9 @@ Screening a person is processing personal data (Закон РК «О персо�
 AML law (Закон РК № 191-IV о ПОД/ФТ, due diligence on clients). The tool
 enforces the following:
 
-- `purpose` is mandatory and every screening is written to `data/audit.jsonl`:
-  operator, purpose, subject, the queries sent out.
+- `purpose` is mandatory and every screening is written to the audit trail
+  (SQLite, `data/dd.sqlite`): operator, purpose, subject, the queries sent out,
+  cost.
 - A person's **ИИН and full birth date never leave the machine**, except the ИИН
   lookup in the official goszakup registry. Claude and the search engine get
   the name, city, birth year and related names only. The ИИН is used locally to
@@ -154,7 +159,8 @@ enforces the following:
 ```bash
 python -m venv .venv
 .venv\Scripts\activate            # Windows
-pip install -r requirements.txt
+pip install -r requirements.txt              # pinned lock file
+pip install -r requirements-dev.txt          # pytest, ruff, mypy
 
 # try it without an API key: a recorded fictional run through the real pipeline
 python cli.py demo                # -> reports/sample_report.md
@@ -172,14 +178,50 @@ python cli.py screen --type person --name "Фамилия Имя Отчеств�
     --city Алматы --related "ТОО Ромашка Строй" --purpose "KYC при открытии счёта"
 ```
 
-Reports are written to `reports/<request_id>.md` and `.json`. HTTP API:
-`fastapi dev main.py`, then `POST /screen` or `POST /screen.md` (docs at `/docs`).
+Reports are written to `reports/<request_id>.md` and `.json`. Each ends with
+the screening's time and cost (API requests, tokens, web searches, pages opened).
 
-Tests run offline. Claude is replaced by a scripted stub; page fetches and the
-Wayback API go through `httpx.MockTransport`:
+**Reviewer labels.** Each source in a report shows its finding `id`:
 
 ```bash
-pytest
+python cli.py label 3f2a9c1d0b7e namesake    # or: same
+python evaluate.py --labelled                # the matcher on labelled real findings
+```
+
+**HTTP API** (`fastapi dev main.py`, docs at `/docs`). A screening takes minutes,
+so the main entry point is asynchronous:
+
+```bash
+curl -X POST localhost:8000/jobs -H "Content-Type: application/json" -d @request.json
+# -> 202 {"job_id": "…", "status": "queued"}
+curl localhost:8000/jobs/<job_id>
+# -> {"status": "queued | running | done | failed", "report": {…}}
+```
+
+Jobs run on a thread pool in the API process (`JOB_WORKERS`), their state is in
+SQLite, and jobs left unfinished by a restart are marked failed. `POST /screen`
+(blocking) stays for scripts. Scaling out means a queue (Redis / RabbitMQ) for
+the pool and Postgres for the store; only `store.py` touches SQL.
+
+**Docker:**
+
+```bash
+docker build -t due-diligence-agent .
+docker run -p 8000:8000 --env-file .env -v dd-data:/app/data due-diligence-agent
+```
+
+The image installs the pinned lock file, runs as an unprivileged user, has a
+health check, and keeps personal data out: `.env`, `data/` and `reports/` are
+in `.dockerignore`. The volume holds the SQLite store and the sanctions export.
+
+**Development:**
+
+```bash
+pytest            # offline: Claude is a scripted stub, pages and Wayback go through httpx.MockTransport
+ruff check .
+mypy
+# after changing requirements.in:
+uv pip compile --universal --python-version 3.12 requirements.in -o requirements.txt
 ```
 
 ## Demo
@@ -206,11 +248,13 @@ committed sample.
 
 ## CI
 
-[GitHub Actions](.github/workflows/ci.yml) on Python 3.12 and 3.14 runs the test
-suite and the demo, and then checks that the evaluation is **reproducible**: it
-regenerates the synthetic set and `evals/RESULTS.md` and fails if the committed
-results differ. Metrics in this README can't drift from the code without CI
-turning red. The demo report is uploaded as a build artifact.
+[GitHub Actions](.github/workflows/ci.yml), on Python 3.12 and 3.14 from the
+pinned lock files: ruff, mypy, the test suite and the demo. Then it checks that
+the evaluation is **reproducible**: it regenerates the synthetic set and
+`evals/RESULTS.md` and fails if the committed results differ, so metrics in this
+README can't drift from the code without CI turning red. A second job builds the
+Docker image, starts it and runs a background job through the API end to end.
+The demo report is uploaded as a build artifact.
 
 ## Evaluation: namesakes
 
@@ -244,7 +288,7 @@ python evaluate.py        # prints and writes evals/RESULTS.md
 
 The threshold is tuned on dev only. All sets are fictional, so they test the
 matcher's logic, not its real-world accuracy. Real accuracy comes from reviewer
-labels in `data/match_features.jsonl` (`python evaluate.py --match-log ...`).
+labels (`python cli.py label`, then `python evaluate.py --labelled`).
 
 **Results** at threshold 0.5 (full tables, per-trap breakdown and every error in
 [evals/RESULTS.md](evals/RESULTS.md)):
@@ -295,9 +339,12 @@ Every new rule version needs a new holdout written before it.
 Web search is billed at $10 per 1,000 searches, plus tokens (Opus 5.5: $4 / $20
 per million input / output tokens). Search results are large, and the history
 is resent on every agent turn. Prompt caching is on, but tokens still dominate.
-The per-screening cost has **not been measured yet**. Measure it on the first
-real runs (`usage` on each response) before choosing rounds, search budget and
-effort. `MAX_ROUNDS`, `SEARCHES_PER_ROUND`, `FETCHES_PER_ROUND`,
+The per-screening cost has **not been measured yet**: the project has not run
+against the live API. It is measured automatically once it does: every report
+ends with the API requests, tokens (input, cached, output), web searches, pages
+opened, the estimated cost (prices in `config.py`) and the wall-clock time, and
+the same numbers go to the audit trail. Measure a handful of real screenings
+before choosing rounds, search budget and effort. `MAX_ROUNDS`, `SEARCHES_PER_ROUND`, `FETCHES_PER_ROUND`,
 `PIVOTS_PER_ROUND`, `MAX_DEPTH` and `EFFORT` are the levers.
 
 ## Roadmap
@@ -308,8 +355,8 @@ effort. `MAX_ROUNDS`, `SEARCHES_PER_ROUND`, `FETCHES_PER_ROUND`,
   OpenSanctions (KZ) and the РНУ, negatives from random registered companies.
   Metrics: finding precision / recall, fabricated-quote rate, fact grouping
   accuracy, cost and latency per screening.
-- **Learned identity matcher** trained on the labelled `match_features.jsonl`,
-  compared with the heuristic baseline.
+- **Learned identity matcher** trained on reviewer-labelled findings from the
+  store, compared with the heuristic baseline.
 - **Adverse-media classifier** (fine-tuned rubert-tiny2) against Claude
   zero-shot on category / status, for a cheap pre-filter.
 - **More Kazakhstani sources**: КГД lists (inactive taxpayers, sham companies,

@@ -13,20 +13,27 @@ explicit features, in two groups:
 v1 had only the first group, and the eval (evaluate.py) showed the cost: a full
 namesake from another city scored 1.0 and half of all namesakes leaked into the
 risk score. The scorer stays a transparent heuristic: every feature vector is
-logged to MATCH_LOG, and once reviewers label findings as same / different
-entity, that log is the training set for a learned matcher evaluated against it.
+stored (store.match_features), a reviewer labels findings as same / different
+entity (`python cli.py label`), and the labelled rows are the training set for a
+learned matcher evaluated against it (`python evaluate.py --labelled`).
 """
-import json
 import re
 from dataclasses import asdict, dataclass
 from datetime import date
-from pathlib import Path
 
 import geo
+import store
 from config import settings
 from models import Finding, Subject, SubjectType
-from names import (fold, given_name_conflict, name_similarity, patronymic_conflict, skeleton, strip_legal_form,
-                   token_match)
+from names import (
+    fold,
+    given_name_conflict,
+    name_similarity,
+    patronymic_conflict,
+    skeleton,
+    strip_legal_form,
+    token_match,
+)
 
 WINDOW = 300  # chars of folded text on each side of a name occurrence
 ID_LOOKBACK = 25  # tokens searched before a БИН/ИИН for the entity it belongs to
@@ -155,7 +162,7 @@ def features(subject: Subject, finding: Finding, page_text: str | None) -> Match
 
     id_in_text = bool(subject.identifier and subject.identifier in set(_ID.findall(folded)))
     fits_birth, birth_conflict = _birth_evidence(subject, near, finding.published)
-    city_near = bool(subject.city) and geo.mentions_city(near, subject.city, folded=True)
+    city_near = subject.city is not None and geo.mentions_city(near, subject.city, folded=True)
     home = geo.canonical(subject.city)
     other_cities = geo.cities_in(near, folded=True) - ({home} if home else set())
 
@@ -226,18 +233,15 @@ def score(feat: MatchFeatures, subject: Subject) -> tuple[float, list[str]]:
 
 
 def match_findings(subject: Subject, findings: list[Finding], pages: dict[str, str | None],
-                   request_id: str = "", log_path: str | None = None) -> None:
-    """Set match_score / match_reasons on each finding and log the feature vectors."""
-    log = Path(log_path if log_path is not None else settings.MATCH_LOG)
+                   request_id: str = "", log: bool = True) -> None:
+    """Set match_score / match_reasons on each finding and store the feature vectors."""
     rows = []
     for f in findings:
         feat = features(subject, f, pages.get(f.url))
         f.match_score, f.match_reasons = score(feat, subject)
-        rows.append({"request_id": request_id, "finding_id": f.id, "subject_type": subject.type,
-                     "source_type": f.source_type, "verification": f.verification,
-                     **asdict(feat), "score": f.match_score, "label": None})
-    if rows and log_path != "":
-        log.parent.mkdir(parents=True, exist_ok=True)
-        with log.open("a", encoding="utf-8") as fh:
-            for row in rows:
-                fh.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
+        rows.append({"request_id": request_id, "finding_id": f.id, "subject_type": str(subject.type),
+                     "score": f.match_score,
+                     "features": {**asdict(feat), "source_type": f.source_type, "verification": str(f.verification),
+                                  "url": f.url, "mention": f.subject_mentioned_as}})
+    if rows and log:
+        store.add_match_rows(rows)
