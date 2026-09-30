@@ -53,6 +53,7 @@ class Severity(StrEnum):
 class Verification(StrEnum):
     REGISTRY = "registry"  # structured record from an official source, nothing to verify
     VERIFIED = "verified"  # the quote was found on the fetched page
+    VERIFIED_ARCHIVE = "verified_archive"  # found only in a Wayback Machine snapshot (page gone or edited)
     QUOTE_NOT_FOUND = "quote_not_found"  # page fetched, quote absent: likely hallucinated or edited
     UNREACHABLE = "unreachable"  # page could not be fetched (paywall, geo-block, removed)
     NOT_CHECKED = "not_checked"
@@ -97,10 +98,22 @@ class Finding(BaseModel):
     quote: str = ""  # verbatim excerpt from the source that supports the claim
     subject_mentioned_as: str = ""  # how the source names the subject
     identity_evidence: list[str] = []  # why the source is believed to be about this subject
+    # Short label of the underlying event, the same for every article about it (set by the
+    # agent); used to group articles into facts.
+    event_key: str = ""
+    # Empty: the fact is about the subject. Otherwise the affiliated entity it is about
+    # (a director, a founder, a subsidiary) and how it is linked to the subject.
+    about: str = ""
+    relation_path: str = ""
     verification: Verification = Verification.NOT_CHECKED
+    archive_url: str = ""  # Wayback snapshot the quote was verified against
     match_score: float = 0.0  # 0..1: probability the source is about this subject, not a namesake
     match_reasons: list[str] = []
-    risk: float = 0.0  # 0..1 contribution to the overall score
+    source_tier: str = ""  # registry | official | major_media | media | low
+    source_weight: float = 1.0
+    recency_weight: float = 1.0
+    fact_id: str = ""
+    risk: float = 0.0  # 0..1 contribution of this finding alone
 
     @property
     def id(self) -> str:
@@ -117,6 +130,24 @@ class SourceCheck(BaseModel):
     note: str = ""
 
 
+class Fact(BaseModel):
+    """One adverse event, possibly reported by several sources."""
+
+    id: str
+    category: Category
+    status: Status
+    severity: Severity
+    claim: str
+    about: str = ""  # empty = the subject itself
+    relation_path: str = ""
+    sources: list[str]  # distinct source domains / registries
+    corroborations: int  # number of independent sources
+    strength: float  # 0..1 combined evidence of all sources
+    recency_weight: float
+    risk: float
+    finding_ids: list[str]
+
+
 class Report(BaseModel):
     request_id: str
     created_at: datetime
@@ -124,8 +155,10 @@ class Report(BaseModel):
     risk_score: float  # 0..1
     risk_level: str  # none | low | medium | high
     findings: list[Finding]  # identity confirmed or likely, sorted by risk
+    facts: list[Fact] = []  # findings grouped by event, sorted by risk
     possible_namesakes: list[Finding]  # adverse, but probably another person/company
     sources: list[SourceCheck]
     queries: list[str]  # web searches the agent ran
     rounds: int
+    graph: dict = {}  # entity graph: {"nodes": [...], "edges": [...]}
     markdown: str = ""

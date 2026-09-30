@@ -89,3 +89,42 @@ def test_api(company, monkeypatch):
 
     bad = {**body, "subject": {**body["subject"], "purpose": ""}}
     assert client.post("/screen", json=bad).status_code == 422  # purpose is mandatory
+
+
+def test_end_to_end_facts_affiliates_graph(company, tmp_logs):
+    lead = {"name": "Ахметов Ержан Болатович", "kind": "person", "relation": "директор", "connected_to": "",
+            "source_url": "https://tengrinews.kz/1", "reason": "директор субъекта"}
+    quote = "ТОО «Ромашка Строй» (БИН 123456789012) подозревают в обналичивании"
+    pages = {
+        "https://tengrinews.kz/1": f"<p>{quote} денег. Директор Ахметов Ержан Болатович задержан.</p>",
+        "https://zakon.kz/2": f"<p>Алматы. {quote} средств через фирмы-однодневки.</p>",
+        "https://orda.kz/3": "<p>Ахметов Ержан Болатович, директор ТОО «Ромашка Строй», ранее был осуждён "
+                             "за уклонение от налогов.</p>",
+    }
+    model = ScriptedModel(
+        message("tool_use", block("tool_use", id="t1", name="record_findings", input={
+            "findings": [
+                agent_finding("https://tengrinews.kz/1", quote, "ТОО «Ромашка Строй»", category="money_laundering",
+                              status="investigation", event_key="обнал через однодневки", published="2026-05-01"),
+                agent_finding("https://zakon.kz/2", quote, "ТОО «Ромашка Строй»", category="money_laundering",
+                              status="investigation", event_key="Обнал через однодневки", published="2026-05-02"),
+            ],
+            "leads": [lead]})),
+        message("end_turn"),
+        message("tool_use", block("tool_use", id="t2", name="record_findings", input={
+            "findings": [agent_finding("https://orda.kz/3", "ранее был осуждён за уклонение от налогов",
+                                       "Ахметов Ержан Болатович", category="tax", status="convicted",
+                                       about="Ахметов Ержан Болатович", event_key="налоговое дело директора")],
+            "leads": []})),
+        message("end_turn"),
+    )
+    report = screen(company, operator="tester", collectors=[], model_fn=model, http=mock_http(pages), max_rounds=2)
+
+    own = [f for f in report.facts if not f.about]
+    aff = [f for f in report.facts if f.about]
+    assert len(own) == 1 and own[0].corroborations == 2  # two outlets, one event
+    assert own[0].sources == ["tengrinews.kz", "zakon.kz"]
+    assert len(aff) == 1 and aff[0].about == "Ахметов Ержан Болатович"
+    assert aff[0].relation_path == "Субъект → директор: Ахметов Ержан Болатович"
+    assert "```mermaid" in report.markdown and "Негатив по связанным лицам" in report.markdown
+    assert report.graph["edges"][0]["relation"] == "директор"

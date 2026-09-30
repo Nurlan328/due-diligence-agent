@@ -37,6 +37,19 @@ class Settings(BaseSettings):
     QUOTE_MATCH_THRESHOLD: float = 90.0  # rapidfuzz partial_ratio, 0..100
     # Findings below this identity score are reported as possible namesakes, not as risk.
     MATCH_THRESHOLD: float = 0.5
+    # Wayback Machine fallback when a cited page is gone or no longer contains the quote.
+    # archive.org is intermittently unreachable from Kazakhstani networks: failures are soft.
+    ARCHIVE_ENABLED: bool = True
+    ARCHIVE_TIMEOUT: float = 15.0
+
+    # --- Scoring ---
+    # A fact about a director / founder / subsidiary counts at this share of the same fact
+    # about the subject itself.
+    AFFILIATE_WEIGHT: float = 0.5
+
+    # --- Entity graph (deep search pivots) ---
+    MAX_DEPTH: int = 2  # hops from the subject: 1 = its directors / founders / subsidiaries
+    PIVOTS_PER_ROUND: int = 5
 
     # --- Storage ---
     DATA_DIR: str = "data"

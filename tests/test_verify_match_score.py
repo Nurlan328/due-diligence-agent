@@ -1,4 +1,5 @@
 import json
+from datetime import date
 
 from conftest import mock_http
 
@@ -60,8 +61,13 @@ def test_match_log_written(company, tmp_logs):
 
 
 def test_risk_weights_and_noisy_or():
-    strong = web(status="convicted", severity="critical", verification="verified", match_score=1.0)
+    # official source, recent: nothing discounts it
+    strong = web(url="https://office.sud.kz/case/1", status="convicted", severity="critical",
+                 verification="verified", match_score=1.0, published=str(date.today().year))
     assert finding_risk(strong) == 1.0
+    # an unknown outlet (0.7) with no date (0.8)
+    assert finding_risk(web(status="convicted", severity="critical", verification="verified",
+                            match_score=1.0)) == 0.56
     acquitted = web(status="acquitted", verification="verified", match_score=1.0)
     assert finding_risk(acquitted) == 0.0
     fake = web(verification="quote_not_found", match_score=1.0)

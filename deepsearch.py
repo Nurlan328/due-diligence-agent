@@ -6,9 +6,13 @@ fact through our own `record_findings` tool, with a verbatim quote, the source
 URL, the category and the procedural status. The quote is later checked against
 the fetched page (verify.py), so a hallucinated quote is caught, not reported.
 
-Round N+1 starts a fresh conversation that follows the leads found in round N
-(affiliated companies, directors from official records, case numbers). Rounds
-stop when the budget is spent or a round finds nothing new.
+Leads build an entity graph (graph.py): each affiliated company, director,
+founder or case is a node linked to the entity it was found next to. Round N+1
+starts a fresh conversation that explores the graph's frontier: the
+best-supported unexplored nodes within MAX_DEPTH hops. Findings about an
+affiliate are recorded with `about` set, so they are reported (and scored at a
+discount) as affiliate risk, not as the subject's own. Rounds stop when the
+budget is spent, the frontier is empty or a round finds nothing new.
 
 Privacy: a person's ИИН and full birth date are never sent to Claude or to the
 search engine. They stay local and are only used to confirm identity in fetched
@@ -22,6 +26,7 @@ from anthropic import Anthropic
 from pydantic import BaseModel, ValidationError
 
 from config import settings
+from graph import EntityGraph, Node
 from models import Category, Finding, Severity, Status, Subject, SubjectType
 from names import search_variants
 
@@ -67,12 +72,20 @@ paid, removed from register), acquitted, unknown. Do not upgrade an allegation.
 (criminal case, fraud, corruption, РНУ, bankruptcy), medium (large lawsuits, tax \
 debt, regulator fine), low (minor disputes, old closed matters).
 - subject_mentioned_as: the name exactly as the source writes it.
+- about: empty if the fact concerns the subject itself; otherwise the exact name \
+of the affiliated entity it concerns (one you were asked to check, or a lead).
+- event_key: a short label of the underlying event, 3-8 words, e.g. "уголовное \
+дело о хищении топлива 2024". Use the SAME label for every article about the same \
+event, so the articles can be grouped.
 - identity_evidence: the details that tie the source to THIS subject or set it \
 apart (БИН, city, age, position, company, related names). Namesakes are common: \
 record a fact if it plausibly concerns the subject and say what is uncertain; skip \
 it only if the details clearly describe someone else.
-- leads: affiliated companies, directors, founders and case numbers worth a \
-follow-up search. Official roles only.
+- leads: affiliated companies, directors, founders, subsidiaries and case \
+numbers worth a follow-up search. Official roles only. relation: what the lead is \
+to connected_to (директор, учредитель, дочерняя компания, участник дела, \
+контрагент); connected_to: the entity it is linked to, empty for the subject; \
+source_url: where the link is stated.
 
 Do not collect private life: health, family members, religion, ethnicity, \
 sexual life, home address, phone numbers, photos. Skip it even when you see it.
@@ -99,7 +112,8 @@ RECORD_TOOL: dict[str, Any] = {
                     "type": "object",
                     "additionalProperties": False,
                     "required": ["url", "title", "published", "source_name", "category", "status",
-                                 "severity", "claim", "quote", "subject_mentioned_as", "identity_evidence"],
+                                 "severity", "claim", "quote", "subject_mentioned_as", "identity_evidence",
+                                 "about", "event_key"],
                     "properties": {
                         "url": {"type": "string"},
                         "title": {"type": "string"},
@@ -112,6 +126,8 @@ RECORD_TOOL: dict[str, Any] = {
                         "quote": {"type": "string"},
                         "subject_mentioned_as": {"type": "string"},
                         "identity_evidence": {"type": "array", "items": {"type": "string"}},
+                        "about": {"type": "string", "description": "Empty = the subject; else the affiliate's name"},
+                        "event_key": {"type": "string"},
                     },
                 },
             },
@@ -120,10 +136,13 @@ RECORD_TOOL: dict[str, Any] = {
                 "items": {
                     "type": "object",
                     "additionalProperties": False,
-                    "required": ["name", "kind", "reason"],
+                    "required": ["name", "kind", "relation", "connected_to", "source_url", "reason"],
                     "properties": {
                         "name": {"type": "string"},
                         "kind": {"type": "string", "enum": ["company", "person", "case", "other"]},
+                        "relation": {"type": "string"},
+                        "connected_to": {"type": "string", "description": "Empty = the subject"},
+                        "source_url": {"type": "string"},
                         "reason": {"type": "string"},
                     },
                 },
@@ -145,6 +164,8 @@ class AgentFinding(BaseModel):
     quote: str
     subject_mentioned_as: str
     identity_evidence: list[str]
+    about: str = ""
+    event_key: str = ""
 
     def to_finding(self) -> Finding:
         return Finding(source_type="web", **self.model_dump())
@@ -153,7 +174,10 @@ class AgentFinding(BaseModel):
 class Lead(BaseModel):
     name: str
     kind: Literal["company", "person", "case", "other"]
-    reason: str
+    relation: str = ""
+    connected_to: str = ""
+    source_url: str = ""
+    reason: str = ""
 
 
 class RecordInput(BaseModel):
@@ -168,6 +192,7 @@ class ResearchResult:
     queries: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     rounds: int = 0
+    graph: EntityGraph | None = None
 
 
 # (request kwargs) -> final Message. Injected so tests run without the API.
@@ -207,17 +232,19 @@ def subject_brief(subject: Subject) -> str:
     return "\n".join(lines)
 
 
-def _round_prompt(subject: Subject, round_no: int, known: list[Finding], leads: list[Lead]) -> str:
+def _round_prompt(subject: Subject, round_no: int, known: list[Finding], pivots: list[Node],
+                  graph: EntityGraph | None = None) -> str:
     parts = [f"Субъект проверки:\n{subject_brief(subject)}"]
+    budget = f"Бюджет: до {settings.SEARCHES_PER_ROUND} поисков и {settings.FETCHES_PER_ROUND} открытых страниц."
     if round_no == 1:
-        parts.append(f"Раунд 1. Проведи широкий поиск по всем категориям риска. "
-                     f"Бюджет: до {settings.SEARCHES_PER_ROUND} поисков и {settings.FETCHES_PER_ROUND} открытых страниц.")
+        parts.append(f"Раунд 1. Проведи широкий поиск по всем категориям риска. {budget}")
     else:
         known_lines = "\n".join(f"- {f.url} — {f.claim}" for f in known) or "- (нет)"
-        lead_lines = "\n".join(f"- [{l.kind}] {l.name}: {l.reason}" for l in leads)
+        pivot_lines = "\n".join(
+            f"- [{n.kind}] {n.name} ({graph.path(n.id) if graph else ''})" for n in pivots)
         parts.append(f"Раунд {round_no}. Уже записано (не дублируй):\n{known_lines}")
-        parts.append(f"Проверь эти зацепки в связи с субъектом:\n{lead_lines}\n"
-                     f"Бюджет: до {settings.SEARCHES_PER_ROUND} поисков и {settings.FETCHES_PER_ROUND} открытых страниц.")
+        parts.append(f"Проверь негатив по этим связанным сущностям (в находках укажи about = их имя, "
+                     f"если факт касается их, а не субъекта):\n{pivot_lines}\n{budget}")
     return "\n\n".join(parts)
 
 
@@ -301,26 +328,47 @@ def deep_search(subject: Subject, model_fn: ModelFn | None = None,
                 max_rounds: int | None = None) -> ResearchResult:
     model_fn = model_fn or claude_call
     max_rounds = max_rounds or settings.MAX_ROUNDS
-    total = ResearchResult()
+    graph = EntityGraph(subject)
+    total = ResearchResult(graph=graph)
     seen_ids: set[str] = set()
-    pursued: set[str] = set()
-    pending: list[Lead] = []
+    pivots: list[Node] = []
 
     for round_no in range(1, max_rounds + 1):
-        if round_no > 1 and not pending:
-            break
-        prompt = _round_prompt(subject, round_no, total.findings, pending)
-        pursued.update(l.name.lower() for l in pending)
+        if round_no > 1:
+            pivots = graph.frontier(settings.PIVOTS_PER_ROUND, settings.MAX_DEPTH)
+            if not pivots:
+                break
+        prompt = _round_prompt(subject, round_no, total.findings, pivots, graph)
+        graph.mark_explored([graph.subject_id] + [n.id for n in pivots])
         result = run_round(prompt, model_fn)
         total.rounds = round_no
         total.queries += result.queries
         total.notes += [f"раунд {round_no}: {n}" for n in result.notes]
 
+        for lead in result.leads:
+            graph.add(lead.name, lead.kind, lead.relation or "связь", lead.connected_to, lead.source_url)
         new = [f for f in result.findings if f.id not in seen_ids]
+        for f in new:
+            _attach_to_graph(f, graph)
         seen_ids.update(f.id for f in new)
         total.findings += new
         total.leads += result.leads
-        pending = list({l.name.lower(): l for l in result.leads if l.name.lower() not in pursued}.values())
         if round_no > 1 and not new:
             break
     return total
+
+
+def _attach_to_graph(f: Finding, graph: EntityGraph) -> None:
+    """Resolve `about` to a graph node: the subject (cleared) or an affiliate (with its path)."""
+    if not f.about.strip():
+        f.about = ""
+        return
+    nid = graph.find(f.about)
+    if nid == graph.subject_id:
+        f.about = ""
+        return
+    if nid is None:  # an affiliate the agent did not report as a lead: link it to the subject
+        nid = graph.add(f.about, "other", "упомянут в источнике", "", f.url)
+    graph.nodes[nid].sources.add(f.url)
+    f.about = graph.nodes[nid].name
+    f.relation_path = graph.path(nid)

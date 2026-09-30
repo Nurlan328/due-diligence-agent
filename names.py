@@ -6,10 +6,15 @@ Qairat), and with or without the patronymic. Companies appear with or without
 the legal form (ТОО / ЖШС / LLP) and quotes. Everything is folded to one Latin
 "skeleton" before comparison so that all of these compare equal.
 
+Names in running text are inflected («Оспановой», «Дархана Жумабаева»): every
+token is expanded into its possible base forms (pymorphy3 plus suffix rules for
+Kazakh surnames and names pymorphy does not know) before comparison.
+
 Person names are expected in the Kazakhstani order: Фамилия Имя Отчество.
 """
 import re
 import unicodedata
+from functools import lru_cache
 
 from rapidfuzz import fuzz
 
@@ -29,6 +34,8 @@ _TRANSLIT = {
 # Spelling-variant collapse applied to the Latin form (both Cyrillic-derived and native Latin):
 # Kh/H, Q/K, Yu/U, doubled letters (Issabayev / Isabaev) and y/i all mean the same name.
 _SKELETON_RULES = [
+    # Ё is "yo" in Latin and folded to е in Cyrillic; word-initial Е is "Ye" in passports (Yerlan).
+    (r"yo", "e"), (r"\bye", "e"),
     (r"shch", "sh"), (r"kh", "h"), (r"q", "k"), (r"yu", "u"), (r"ya", "a"), (r"iy", "i"),
     (r"y", "i"), (r"j", "zh"), (r"w", "u"), (r"x", "ks"), (r"(.)\1", r"\1"),
 ]
@@ -110,21 +117,77 @@ def search_variants(subject: Subject) -> list[str]:
     return uniq
 
 
+# --- inflection -----------------------------------------------------------------------------------
+
+_SURNAME_CASE = re.compile(r"^(.+(?:ов|ев|ёв|ин|ын))(?:а|у|ой|ым|ом|е|ы|ою|ых|ыми)?$")
+_NOUN_ENDINGS = ("ами", "ями", "ой", "ей", "ом", "ем", "ым", "им", "ою", "а", "я", "у", "ю", "е", "ы", "и")
+_PATRONYMIC = re.compile(r"^(.+?)(?:ович|евич|ич|овна|евна|ична|улы|уулу|кызы)(?:а|у|ем|ом|е|ой|ы)?$")
+
+
+@lru_cache(maxsize=1)
+def _morph():
+    try:
+        import pymorphy3
+
+        return pymorphy3.MorphAnalyzer()
+    except ImportError:  # optional: suffix rules alone still cover the common surname cases
+        return None
+
+
+@lru_cache(maxsize=100_000)
+def lemmas(word: str) -> frozenset[str]:
+    """Skeletons of every plausible base form of one word (any case, either gender)."""
+    w = fold(word)
+    if not w:
+        return frozenset()
+    forms = {w}
+    morph = _morph()
+    if morph is not None and re.search(r"[а-я]", w):
+        forms.update(p.normal_form for p in morph.parse(w))
+    m = _SURNAME_CASE.match(w)
+    if m:
+        forms.add(m.group(1))  # Оспановой / Оспанова / Оспанову -> оспанов
+    for end in _NOUN_ENDINGS:  # Дархана -> дархан, Динару -> динар(а)
+        if w.endswith(end) and len(w) - len(end) >= 3:
+            forms.add(w[: -len(end)])
+    return frozenset(skeleton(f) for f in forms if f)
+
+
+def token_match(a: str, b: str, threshold: float = 92) -> bool:
+    """Two name tokens are the same name in some case/spelling. A one-letter-off surname
+    (Ахметов / Ахматов, 86%) is a different family, so the bar is high."""
+    la, lb = lemmas(a), lemmas(b)
+    if la & lb:
+        return True
+    return any(len(x) > 2 and len(y) > 2 and fuzz.ratio(x, y) >= threshold for x in la for y in lb)
+
+
+def patronymic_root(token: str) -> str | None:
+    """Father's name from a patronymic in Russian or Kazakh form: Болатович / Болатұлы -> болат."""
+    m = _PATRONYMIC.match(fold(token))
+    return skeleton(m.group(1)) if m and len(m.group(1)) >= 3 else None
+
+
+# --- similarity ------------------------------------------------------------------------------------
+
 def company_similarity(a: str, b: str) -> float:
     """0..1 similarity of two company names, legal forms and spelling ignored."""
     ka, kb = skeleton(strip_legal_form(a)), skeleton(strip_legal_form(b))
     if not ka or not kb:
         return 0.0
-    # "КазОйл" vs "Каз Ойл": same name, different tokenisation.
-    joined = fuzz.ratio(ka.replace(" ", ""), kb.replace(" ", "")) / 100
-    if joined >= 0.92:
-        return joined
-    # Whole-string similarity alone rates "Ромашка Строй" vs "Ромашка Трейд" at ~0.8:
-    # scale it by the share of tokens that have a counterpart in the other name.
     ta, tb = ka.split(), kb.split()
-    matched = sum(1 for t in ta if any(fuzz.ratio(t, u) >= 85 for u in tb))
+    # "КазОйл" vs "Каз Ойл": same name, different tokenisation. Only when one side is a
+    # single word, otherwise "Колокольчик Агро KZ" would pass as "Колокольчик Агро".
+    if len(ta) != len(tb) and min(len(ta), len(tb)) == 1:
+        joined = fuzz.ratio(ka.replace(" ", ""), kb.replace(" ", "")) / 100
+        if joined >= 0.92:
+            return joined
+    # Whole-string similarity alone rates "Ромашка Строй" vs "Ромашка Трейд" at ~0.8. Scale it by
+    # the squared share of tokens with a counterpart: an extra or a different word usually
+    # means a different company ("… Групп", "… KZ").
+    matched = sum(1 for t in ta if any(token_match(t, u, 85) for u in tb))
     coverage = matched / max(len(ta), len(tb))
-    return round(fuzz.token_sort_ratio(ka, kb) / 100 * coverage, 3)
+    return round(fuzz.token_sort_ratio(ka, kb) / 100 * coverage**2, 3)
 
 
 def person_similarity(subject_name: str, mention: str) -> tuple[float, str]:
@@ -134,24 +197,24 @@ def person_similarity(subject_name: str, mention: str) -> tuple[float, str]:
     of the name is confirmed: surname + given name + patronymic is strong, a surname
     with an initial is weak, a surname alone is almost nothing.
     """
-    subj = skeleton(subject_name).split()
-    ment = skeleton(mention).split()
+    subj = fold(subject_name).split()
+    ment = fold(mention).split()
     if not subj or not ment:
         return 0.0, "пустое имя"
 
-    def full_match(token: str, target: str) -> bool:
-        return len(token) > 1 and fuzz.ratio(token, target) >= 85
+    def full(token: str, target: str) -> bool:
+        return len(token) > 1 and token_match(token, target)
 
-    def initial_match(token: str, target: str) -> bool:
-        return len(token) == 1 and target.startswith(token)
+    def initial(token: str, target: str) -> bool:
+        return len(token) == 1 and skeleton(target).startswith(skeleton(token))
 
-    surname = subj[0]
-    rest = subj[1:]
-    surname_ok = any(full_match(t, surname) for t in ment)
-    given_full = bool(rest) and any(full_match(t, rest[0]) for t in ment)
-    given_init = bool(rest) and any(initial_match(t, rest[0]) for t in ment)
-    patronymic_full = len(rest) > 1 and any(full_match(t, rest[1]) for t in ment)
-    patronymic_init = len(rest) > 1 and any(initial_match(t, rest[1]) for t in ment)
+    surname, rest = subj[0], subj[1:]
+    father = patronymic_root(rest[1]) if len(rest) > 1 else None
+    surname_ok = any(full(t, surname) for t in ment)
+    given_full = bool(rest) and any(full(t, rest[0]) for t in ment)
+    given_init = bool(rest) and any(initial(t, rest[0]) for t in ment)
+    patronymic_full = bool(father) and any(patronymic_root(t) == father for t in ment)
+    patronymic_init = len(rest) > 1 and any(initial(t, rest[1]) for t in ment)
 
     if surname_ok and given_full and patronymic_full:
         return 1.0, "совпадают фамилия, имя и отчество"
@@ -164,8 +227,18 @@ def person_similarity(subject_name: str, mention: str) -> tuple[float, str]:
         return 0.45, "совпадают фамилия и инициал"
     if surname_ok:
         return 0.25, "совпадает только фамилия"
-    best = max(fuzz.ratio(t, surname) for t in ment) / 100
+    best = max(fuzz.ratio(x, y) for t in ment for x in lemmas(t) for y in lemmas(surname)) / 100
     return round(best * 0.2, 3), "фамилия не совпадает"
+
+
+def patronymic_conflict(subject_name: str, mention: str) -> bool:
+    """The source gives a patronymic and it names a different father."""
+    parts = fold(subject_name).split()
+    father = patronymic_root(parts[2]) if len(parts) > 2 else None
+    if not father:
+        return False
+    roots = [r for t in fold(mention).split() if (r := patronymic_root(t))]
+    return bool(roots) and father not in roots
 
 
 def name_similarity(subject: Subject, mention: str) -> tuple[float, str]:

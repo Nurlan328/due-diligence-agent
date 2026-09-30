@@ -4,4 +4,5 @@ pydantic-settings
 httpx               # page fetches for quote verification, goszakup API
 trafilatura         # main-text extraction from news pages
 rapidfuzz           # fuzzy name and quote matching
+pymorphy3           # Russian morphology: inflected names and cities (pure Python)
 pytest

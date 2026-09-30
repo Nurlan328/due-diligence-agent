@@ -45,7 +45,7 @@ def test_split_is_by_subject():
 
 
 def test_every_case_builds_domain_objects():
-    for c in eval_synth.generate(per_trap=2, seed=3) + load(GOLDEN_PATH):
+    for c in eval_synth.generate(per_trap=2, seed=3) + load(GOLDEN_PATH) + load(evaluate.HOLDOUT_PATH):
         Subject(**c["subject"])
         f = Finding(**c["finding"])
         assert f.subject_mentioned_as
@@ -66,7 +66,7 @@ def test_namesake_traps_really_conflict():
 
 def test_report_renders(tmp_path):
     synth = eval_synth.generate(per_trap=2, seed=4)
-    report = evaluate.evaluate_sets(synth, load(GOLDEN_PATH))
+    report = evaluate.evaluate_sets(synth, {"golden": load(GOLDEN_PATH)}, fresh=eval_synth.generate(per_trap=1, seed=9))
     assert "## Per trap type" in report and "heuristic / golden" in report
 
 

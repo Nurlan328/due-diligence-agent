@@ -2,20 +2,39 @@
 
 Namesakes are the main source of false positives in adverse-media screening:
 "Ахметов Ержан" matches hundreds of people. Each finding gets a 0..1 score from
-explicit features (name agreement, БИН/ИИН in the page, city, related names,
-birth year). The scorer is a transparent heuristic on purpose: every feature
-vector is logged to MATCH_LOG, and once reviewers label findings as
-same / different entity, that log is the training set for a learned matcher
-(logistic regression or a cross-encoder) evaluated against this baseline.
+explicit features, in two groups:
+
+- evidence FOR: name agreement (inflection-aware), the subject's БИН/ИИН in the
+  text, the subject's city, related names, the subject's birth year or age;
+- evidence AGAINST, looked for near the name: another БИН/ИИН, another city,
+  another birth year or an age that does not fit, a different patronymic.
+
+v1 had only the first group, and the eval (evaluate.py) showed the cost: a full
+namesake from another city scored 1.0 and half of all namesakes leaked into the
+risk score. The scorer stays a transparent heuristic: every feature vector is
+logged to MATCH_LOG, and once reviewers label findings as same / different
+entity, that log is the training set for a learned matcher evaluated against it.
 """
 import json
 import re
 from dataclasses import asdict, dataclass
+from datetime import date
 from pathlib import Path
 
+import geo
 from config import settings
 from models import Finding, Subject, SubjectType
-from names import fold, name_similarity, skeleton
+from names import fold, name_similarity, patronymic_conflict, skeleton, strip_legal_form, token_match
+
+WINDOW = 300  # chars of folded text on each side of a name occurrence
+
+_ID = re.compile(r"(?<!\d)\d{12}(?!\d)")
+# Folded text: punctuation is gone, so "г.р." is "г р" and "48-летний" is "48 летний".
+_BIRTH_YEAR = [re.compile(r"(?<!\d)(19\d\d|20[0-2]\d) (?:года рождения|г р\b|гр\b|жылы туган|жылгы)"),
+               re.compile(r"born(?: in)? (19\d\d|20[0-2]\d)")]
+_AGE = [re.compile(r"(?<!\d)(\d\d) летн"), re.compile(r"в возрасте (\d\d)"),
+        re.compile(r"(?:мужчин\w*|женщин\w*|ему|ей) (\d\d) (?:лет|год)"),
+        re.compile(r"(?<!\d)(\d\d) years old"), re.compile(r"aged (\d\d)"), re.compile(r"(?<!\d)(\d\d) жаста")]
 
 
 @dataclass
@@ -30,6 +49,59 @@ class MatchFeatures:
     short_company_name: bool
     llm_evidence_count: int
     page_fetched: bool
+    # Evidence against (v2). Defaults keep v1 match logs loadable.
+    other_id_near: bool = False
+    other_city_near: bool = False
+    birth_conflict: bool = False
+    patronymic_conflict: bool = False
+    window_found: bool = False
+
+
+def _anchor(subject: Subject) -> str:
+    """The token whose occurrences mark where the text talks about the subject."""
+    if subject.type == SubjectType.PERSON:
+        return fold(subject.name).split()[0]  # surname
+    core = fold(strip_legal_form(subject.name)).split()
+    return core[0] if core else ""
+
+
+def name_windows(subject: Subject, folded: str) -> list[str]:
+    """Pieces of the text around each occurrence of the subject's surname / company name.
+
+    A page often names several people and places; evidence against only counts when
+    it sits next to the name, not anywhere on the page."""
+    anchor = _anchor(subject)
+    if not anchor:
+        return []
+    threshold = 92 if subject.type == SubjectType.PERSON else 85
+    spans = [m.start() for m in re.finditer(r"\w+", folded) if token_match(m.group(), anchor, threshold)]
+    return [folded[max(0, p - WINDOW): p + WINDOW] for p in spans]
+
+
+def _birth_evidence(subject: Subject, near: str, published: str) -> tuple[bool, bool]:
+    """(fits, conflicts): the subject's birth year against years and ages near the name."""
+    if not subject.birth_date:
+        return False, False
+    year = subject.birth_date.year
+    fits = conflict = False
+    for pattern in _BIRTH_YEAR:
+        for m in pattern.finditer(near):
+            if abs(int(m.group(1)) - year) <= 1:
+                fits = True
+            else:
+                conflict = True
+    pub = re.search(r"(?:19|20)\d\d", published or "")
+    now = int(pub.group()) if pub else date.today().year
+    for pattern in _AGE:
+        for m in pattern.finditer(near):
+            implied = now - int(m.group(1))
+            if abs(implied - year) <= 1:
+                fits = True
+            # Without a publication date the article may be old: the age can only show the
+            # subject is too young to be that person, never that they are too old.
+            elif pub or year > implied + 1:
+                conflict = True
+    return fits, conflict and not fits
 
 
 def features(subject: Subject, finding: Finding, page_text: str | None) -> MatchFeatures:
@@ -37,29 +109,37 @@ def features(subject: Subject, finding: Finding, page_text: str | None) -> Match
     name_score, name_reason = name_similarity(subject, mention) if mention else (0.0, "имя не указано")
     # Without the page, fall back to what the finding itself says.
     text = page_text or " ".join([finding.title, finding.quote, finding.claim, *finding.identity_evidence])
-    digits = re.sub(r"\D", " ", text)
     folded = fold(text)
-    skel = skeleton(text)
+    windows = name_windows(subject, folded)
+    near = " | ".join(windows) if windows else folded
 
-    related_hits = 0
-    for rel in subject.related:
-        key = skeleton(rel)
-        if key and key in skel:
-            related_hits += 1
+    id_in_text = bool(subject.identifier and subject.identifier in set(_ID.findall(folded)))
+    fits_birth, birth_conflict = _birth_evidence(subject, near, finding.published)
+    city_near = bool(subject.city) and geo.mentions_city(near, subject.city, folded=True)
+    home = geo.canonical(subject.city)
+    other_cities = geo.cities_in(near, folded=True) - ({home} if home else set())
+
+    skel = skeleton(text)
+    related_hits = sum(1 for rel in subject.related if (key := skeleton(rel)) and key in skel)
     core = skeleton(subject.name)
     return MatchFeatures(
         name_score=name_score,
         name_reason=name_reason,
-        id_in_text=bool(subject.identifier and re.search(rf"\b{subject.identifier}\b", digits)),
+        id_in_text=id_in_text,
         # Registry collectors say so in identity_evidence when the hit came by identifier.
         registry_id_lookup=finding.source_type == "registry"
         and any("БИН/ИИН" in e for e in finding.identity_evidence),
-        city_in_text=bool(subject.city and fold(subject.city) in folded),
+        city_in_text=city_near,
         related_hits=related_hits,
-        birth_year_in_text=bool(subject.birth_date and str(subject.birth_date.year) in text),
+        birth_year_in_text=fits_birth,
         short_company_name=subject.type == SubjectType.COMPANY and len(core.replace(" ", "")) < 5,
         llm_evidence_count=len(finding.identity_evidence),
         page_fetched=page_text is not None,
+        other_id_near=bool(set(_ID.findall(near)) - {subject.identifier}),
+        other_city_near=bool(subject.city) and bool(other_cities) and not city_near,
+        birth_conflict=birth_conflict,
+        patronymic_conflict=subject.type == SubjectType.PERSON and patronymic_conflict(subject.name, mention),
+        window_found=bool(windows),
     )
 
 
@@ -79,10 +159,25 @@ def score(feat: MatchFeatures, subject: Subject) -> tuple[float, list[str]]:
         reasons.append(f"упомянуты связанные лица/компании: {feat.related_hits}")
     if feat.birth_year_in_text and subject.type == SubjectType.PERSON:
         s += 0.1
-        reasons.append("в тексте есть год рождения")
+        reasons.append("год рождения / возраст совпадает")
     if feat.short_company_name and not feat.id_in_text:
         s -= 0.2
         reasons.append("короткое название, высок риск совпадения с другими компаниями")
+
+    # Evidence against. The subject's own БИН/ИИН in the text overrides all of it.
+    if not feat.id_in_text:
+        if feat.other_id_near:
+            s = min(s, 0.1)
+            reasons.append("рядом с именем другой БИН/ИИН")
+        if feat.patronymic_conflict:
+            s = min(s, 0.3)
+            reasons.append("другое отчество")
+        if feat.birth_conflict:
+            s = min(s, 0.3)
+            reasons.append("другой год рождения или возраст")
+        if feat.other_city_near and not feat.related_hits:
+            s = min(s, 0.45)
+            reasons.append("в источнике другой город")
     return round(min(max(s, 0.0), 1.0), 3), reasons
 
 
