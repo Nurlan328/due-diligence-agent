@@ -142,6 +142,11 @@ class EntityGraph:
         for e in self.edges:
             rel = e.relation.replace('"', "'").replace("|", "/") or "связь"
             lines.append(f'  {ids[e.src]} -->|"{rel}"| {ids[e.dst]}')
-        lines.append(f"  style {ids[self.subject_id]} stroke-width:3px")
-        lines += [f"  style {ids[nid]} stroke:#c0392b,stroke-width:2px" for nid in adverse if nid in ids]
+        # One style line per node (a second one would override the first): the subject gets a
+        # thick border, adverse nodes a red one.
+        for nid in self.nodes:
+            parts = (["stroke:#c0392b"] if nid in adverse else []) + (
+                ["stroke-width:3px"] if nid == self.subject_id else ["stroke-width:2px"] if nid in adverse else [])
+            if parts:
+                lines.append(f"  style {ids[nid]} {','.join(parts)}")
         return "\n".join(lines)

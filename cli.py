@@ -5,6 +5,7 @@
       --purpose "Проверка поставщика перед заключением договора" --operator analyst1
   python cli.py screen --type person --name "Иванов Иван Иванович" --birth-date 1980-05-01 \
       --city Алматы --purpose "KYC при открытии счёта" --no-deep
+  python cli.py demo [--out docs]    # recorded fictional run, no API key or network
 """
 import argparse
 import getpass
@@ -39,6 +40,17 @@ def _screen(args: argparse.Namespace) -> int:
     return 0
 
 
+def _demo(args: argparse.Namespace) -> int:
+    from demo import run_demo
+
+    report, md_path = run_demo(args.out)
+    print(json.dumps({"demo": "вымышленные данные", "risk_level": report.risk_level,
+                      "risk_score": report.risk_score, "facts": len(report.facts),
+                      "possible_namesakes": len(report.possible_namesakes),
+                      "report": str(md_path)}, ensure_ascii=False, indent=2))
+    return 0
+
+
 def _update_sanctions(_: argparse.Namespace) -> int:
     from sources.sanctions import download
 
@@ -67,6 +79,10 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--rounds", type=int, help=f"deep search rounds (default {settings.MAX_ROUNDS})")
     s.add_argument("--out", help=f"report directory (default {settings.REPORTS_DIR})")
     s.set_defaults(func=_screen)
+
+    d = sub.add_parser("demo", help="replay a recorded fictional screening (no API key, no network)")
+    d.add_argument("--out", help=f"directory for sample_report.md / .json (default {settings.REPORTS_DIR})")
+    d.set_defaults(func=_demo)
 
     u = sub.add_parser("update-sanctions", help="download the OpenSanctions export")
     u.set_defaults(func=_update_sanctions)

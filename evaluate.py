@@ -28,6 +28,7 @@ import argparse
 import json
 from collections import defaultdict
 from dataclasses import fields, replace
+from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -41,6 +42,8 @@ GOLDEN_PATH = Path("evals") / "golden_identity.jsonl"
 HOLDOUT_PATH = Path("evals") / "holdout_identity.jsonl"
 HOLDOUT2_PATH = Path("evals") / "holdout2_identity.jsonl"
 FRESH_SEED = 101  # a second synthetic draw nobody looked at while writing the rules
+# Ages in the cases ("48-летний") were written relative to this date.
+EVAL_DATE = date(2026, 9, 30)
 RESULTS_PATH = Path("evals") / "RESULTS.md"
 
 
@@ -261,6 +264,7 @@ def main() -> None:
     p.add_argument("--match-log", help="evaluate on reviewer-labelled rows of match_features.jsonl instead")
     p.add_argument("--no-write", action="store_true", help=f"print only, do not update {RESULTS_PATH}")
     args = p.parse_args()
+    settings.REFERENCE_DATE = settings.REFERENCE_DATE or EVAL_DATE
 
     if args.match_log:
         print(evaluate_match_log(Path(args.match_log)))
@@ -278,7 +282,7 @@ def main() -> None:
     report = evaluate_sets(load(synth_path), hand, fresh=eval_synth.generate(seed=FRESH_SEED))
     print(report)
     if not args.no_write:
-        RESULTS_PATH.write_text(report, encoding="utf-8")
+        RESULTS_PATH.write_text(report, encoding="utf-8", newline="\n")  # same bytes on every OS (CI diffs it)
 
 
 if __name__ == "__main__":

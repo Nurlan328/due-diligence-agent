@@ -1,5 +1,10 @@
 # Due Diligence Agent
 
+[![CI](https://github.com/Nurlan328/due-diligence-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/Nurlan328/due-diligence-agent/actions/workflows/ci.yml)
+
+**[Sample report](docs/sample_report.md)** (fictional data) · **`python cli.py demo`** runs it locally
+without an API key · **[Evaluation results](evals/RESULTS.md)**
+
 Adverse media and counterparty screening for Kazakhstan. The input is a company
 (БИН) or a person (ИИН). The output is a report of every piece of **negative
 public information** about that subject and its directors, founders and
@@ -150,6 +155,10 @@ enforces the following:
 python -m venv .venv
 .venv\Scripts\activate            # Windows
 pip install -r requirements.txt
+
+# try it without an API key: a recorded fictional run through the real pipeline
+python cli.py demo                # -> reports/sample_report.md
+
 copy .env.example .env            # set ANTHROPIC_API_KEY (and GOSZAKUP_TOKEN if you have one)
 
 python cli.py update-sanctions    # ~70 MB OpenSanctions export into data/
@@ -172,6 +181,36 @@ Wayback API go through `httpx.MockTransport`:
 ```bash
 pytest
 ```
+
+## Demo
+
+`python cli.py demo` replays [demo/scenario.json](demo/scenario.json), a recorded
+screening of a fictional company. The agent's turns (searches, findings,
+leads), the web pages, the Wayback Machine and the registries are replayed.
+Everything else is the production code: quote verification, identity matching,
+the entity graph, fact grouping, scoring, the report. The scenario shows each
+stage once:
+
+| in the [sample report](docs/sample_report.md) | stage |
+|---|---|
+| money-laundering story confirmed by 2 outlets, one fact | fact grouping, corroboration |
+| wage-arrears article gone from the site, found in the archive | Wayback fallback |
+| "обманула 300 дольщиков" from a blog, quote not on the page | faithfulness check, low-tier source |
+| bankrupt ТОО with the same name but another БИН, in Шымкент | namesake filter (evidence against) |
+| director's tax conviction, founder's cartel fine | graph pivots, affiliate facts at half weight |
+| РНУ entry found by БИН | structured sources |
+
+All names, identifiers, articles and sites in it are invented; the domains use
+the reserved `.example` TLD. `python cli.py demo --out docs` regenerates the
+committed sample.
+
+## CI
+
+[GitHub Actions](.github/workflows/ci.yml) on Python 3.12 and 3.14 runs the test
+suite and the demo, and then checks that the evaluation is **reproducible**: it
+regenerates the synthetic set and `evals/RESULTS.md` and fails if the committed
+results differ. Metrics in this README can't drift from the code without CI
+turning red. The demo report is uploaded as a build artifact.
 
 ## Evaluation: namesakes
 

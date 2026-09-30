@@ -1,4 +1,6 @@
 """Application configuration (pydantic-settings, read from .env / environment)."""
+from datetime import date
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -41,6 +43,17 @@ class Settings(BaseSettings):
     # archive.org is intermittently unreachable from Kazakhstani networks: failures are soft.
     ARCHIVE_ENABLED: bool = True
     ARCHIVE_TIMEOUT: float = 15.0
+
+    # --- Source tiers (reliability.py) ---
+    # Extra registrable domains per tier, on top of the built-in lists. JSON list in env:
+    # MAJOR_MEDIA_EXTRA='["example-news.kz"]'
+    OFFICIAL_EXTRA: list[str] = []
+    MAJOR_MEDIA_EXTRA: list[str] = []
+    LOW_EXTRA: list[str] = []
+
+    # "Today" for age and recency rules. Empty = the real date; evaluate.py pins it to the date the
+    # eval sets were written, so evals/RESULTS.md stays reproducible (CI checks it).
+    REFERENCE_DATE: date | None = None
 
     # --- Scoring ---
     # A fact about a director / founder / subsidiary counts at this share of the same fact

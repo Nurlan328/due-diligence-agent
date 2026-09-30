@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Offline: Claude is a scripted stub, pages and Wayback go through httpx.MockTransport.
+      - name: Tests
+        run: pytest -q
+
+      # The recorded fictional run through the whole pipeline, no API key or network.
+      - name: Demo
+        run: python cli.py demo --out demo-output
+
+      # The committed evaluation results must be reproducible from the code and the sets.
+      - name: Evaluation is reproducible
+        run: |
+          python eval_synth.py
+          python evaluate.py > /dev/null
+          git diff --exit-code evals/RESULTS.md || {
+            echo "::error::evals/RESULTS.md is out of date: run 'python evaluate.py' and commit the result";
+            exit 1;
+          }
+
+      - uses: actions/upload-artifact@v4
+        if: matrix.python-version == '3.14'
+        with:
+          name: sample-report
+          path: demo-output/

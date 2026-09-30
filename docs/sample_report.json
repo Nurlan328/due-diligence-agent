@@ -1,0 +1,463 @@
+{
+  "request_id": "e5f52390b3f0",
+  "created_at": "2026-09-30T05:23:53.526432Z",
+  "subject": {
+    "type": "company",
+    "name": "ТОО «Ромашка Строй»",
+    "identifier": "123456789012",
+    "birth_date": null,
+    "city": "Алматы",
+    "aliases": [],
+    "related": [
+      "Примеров Ержан Болатович"
+    ],
+    "purpose": "ДЕМО: вымышленные данные. Проверка поставщика перед заключением договора"
+  },
+  "risk_score": 0.914,
+  "risk_level": "high",
+  "findings": [
+    {
+      "source_type": "registry",
+      "source_name": "РНУ (демо)",
+      "url": "https://registry.example/rnu/123456789012",
+      "title": "Реестр недобросовестных участников государственных закупок",
+      "published": "2025-11-03",
+      "category": "procurement",
+      "status": "listed",
+      "severity": "high",
+      "claim": "Компания включена в реестр недобросовестных участников госзакупок",
+      "quote": "включена в РНУ на 24 месяца по иску ГУ «Отдел строительства»; решение суда 2-1187/2025",
+      "subject_mentioned_as": "ТОО «Ромашка Строй»",
+      "identity_evidence": [
+        "поиск по БИН/ИИН"
+      ],
+      "event_key": "",
+      "about": "",
+      "relation_path": "",
+      "verification": "registry",
+      "archive_url": "",
+      "match_score": 1.0,
+      "match_reasons": [
+        "запись найдена по БИН/ИИН"
+      ],
+      "source_tier": "registry",
+      "source_weight": 1.0,
+      "recency_weight": 1.0,
+      "fact_id": "038bd0baa2",
+      "risk": 0.75
+    },
+    {
+      "source_type": "web",
+      "source_name": "KZ Daily (демо)",
+      "url": "https://kz-daily.example/2026/05/romashka-obnal",
+      "title": "Строительную компанию подозревают в обнале",
+      "published": "2026-05-12",
+      "category": "money_laundering",
+      "status": "investigation",
+      "severity": "high",
+      "claim": "Компанию подозревают в обналичивании 1,2 млрд тенге через фирмы-однодневки",
+      "quote": "Алматинское ТОО «Ромашка Строй» (БИН 123456789012) подозревают в обналичивании 1,2 млрд тенге через фирмы-однодневки.",
+      "subject_mentioned_as": "ТОО «Ромашка Строй»",
+      "identity_evidence": [
+        "БИН в тексте",
+        "Алматы",
+        "назван директор"
+      ],
+      "event_key": "обналичивание через фирмы-однодневки 2026",
+      "about": "",
+      "relation_path": "",
+      "verification": "verified",
+      "archive_url": "",
+      "match_score": 1.0,
+      "match_reasons": [
+        "сходство названия 100%",
+        "БИН/ИИН субъекта есть в тексте источника",
+        "совпадает город",
+        "упомянуты связанные лица/компании: 1"
+      ],
+      "source_tier": "major_media",
+      "source_weight": 0.9,
+      "recency_weight": 1.0,
+      "fact_id": "900649495b",
+      "risk": 0.405
+    },
+    {
+      "source_type": "web",
+      "source_name": "Business KZ (демо)",
+      "url": "https://business-kz.example/news/48213",
+      "title": "ДЭР проверяет строительную компанию",
+      "published": "2026-05-13",
+      "category": "money_laundering",
+      "status": "investigation",
+      "severity": "high",
+      "claim": "Департамент экономических расследований проверяет компанию по делу об обналичивании",
+      "quote": "по версии следствия, компания обналичивала деньги через фирмы-однодневки",
+      "subject_mentioned_as": "ТОО «Ромашка Строй»",
+      "identity_evidence": [
+        "Алматы"
+      ],
+      "event_key": "Обналичивание через фирмы-однодневки (2026)",
+      "about": "",
+      "relation_path": "",
+      "verification": "verified",
+      "archive_url": "",
+      "match_score": 1.0,
+      "match_reasons": [
+        "сходство названия 100%",
+        "совпадает город"
+      ],
+      "source_tier": "major_media",
+      "source_weight": 0.9,
+      "recency_weight": 1.0,
+      "fact_id": "900649495b",
+      "risk": 0.405
+    },
+    {
+      "source_type": "web",
+      "source_name": "Архив судебных актов (демо)",
+      "url": "https://court-archive.example/cases/1-512-2019",
+      "title": "Приговор по делу 1-512/2019",
+      "published": "2019-11-05",
+      "category": "tax",
+      "status": "convicted",
+      "severity": "high",
+      "claim": "Директор осуждён за уклонение от уплаты налогов",
+      "quote": "Примеров Ержан Болатович признан виновным в уклонении от уплаты налогов",
+      "subject_mentioned_as": "Примеров Ержан Болатович",
+      "identity_evidence": [
+        "ФИО полностью совпадает с директором"
+      ],
+      "event_key": "налоговое дело 1-512/2019",
+      "about": "Примеров Ержан Болатович",
+      "relation_path": "Субъект → директор: Примеров Ержан Болатович",
+      "verification": "verified",
+      "archive_url": "",
+      "match_score": 1.0,
+      "match_reasons": [
+        "совпадают фамилия, имя и отчество"
+      ],
+      "source_tier": "official",
+      "source_weight": 1.0,
+      "recency_weight": 0.5,
+      "fact_id": "26a455cbbf",
+      "risk": 0.375
+    },
+    {
+      "source_type": "web",
+      "source_name": "Business KZ (демо)",
+      "url": "https://business-kz.example/news/50110",
+      "title": "Штраф за сговор на торгах",
+      "published": "2024-03-02",
+      "category": "regulatory",
+      "status": "civil_judgment",
+      "severity": "medium",
+      "claim": "Учредителя оштрафовали за сговор на торгах",
+      "quote": "Антимонопольное агентство оштрафовало ТОО «Василёк Инвест» за сговор на торгах",
+      "subject_mentioned_as": "ТОО «Василёк Инвест»",
+      "identity_evidence": [],
+      "event_key": "сговор на торгах 2024",
+      "about": "ТОО «Василёк Инвест»",
+      "relation_path": "Субъект → учредитель: ТОО «Василёк Инвест»",
+      "verification": "verified",
+      "archive_url": "",
+      "match_score": 1.0,
+      "match_reasons": [
+        "сходство названия 100%"
+      ],
+      "source_tier": "major_media",
+      "source_weight": 0.9,
+      "recency_weight": 1.0,
+      "fact_id": "0cced4d22e",
+      "risk": 0.324
+    },
+    {
+      "source_type": "web",
+      "source_name": "Old News (демо)",
+      "url": "https://old-news.example/2021/zarplata",
+      "title": "Рабочие пожаловались на задержку зарплаты",
+      "published": "2021-09-14",
+      "category": "labor",
+      "status": "allegation",
+      "severity": "medium",
+      "claim": "Рабочие жаловались на задержку зарплаты за три месяца",
+      "quote": "Рабочие алматинского ТОО «Ромашка Строй» пожаловались на задержку зарплаты за три месяца.",
+      "subject_mentioned_as": "ТОО «Ромашка Строй»",
+      "identity_evidence": [
+        "Алматы"
+      ],
+      "event_key": "задержка зарплаты 2021",
+      "about": "",
+      "relation_path": "",
+      "verification": "verified_archive",
+      "archive_url": "https://web.archive.org/web/20210914083000id_/https://old-news.example/2021/zarplata",
+      "match_score": 1.0,
+      "match_reasons": [
+        "сходство названия 100%",
+        "совпадает город"
+      ],
+      "source_tier": "media",
+      "source_weight": 0.7,
+      "recency_weight": 0.66,
+      "fact_id": "29135b4f26",
+      "risk": 0.0748
+    },
+    {
+      "source_type": "web",
+      "source_name": "Anon Blog (демо)",
+      "url": "https://anon-blog.example/post/77",
+      "title": "Слухи о застройщике",
+      "published": "",
+      "category": "fraud",
+      "status": "allegation",
+      "severity": "high",
+      "claim": "Утверждается, что компания обманула 300 дольщиков",
+      "quote": "ТОО «Ромашка Строй» обманула 300 дольщиков",
+      "subject_mentioned_as": "ТОО «Ромашка Строй»",
+      "identity_evidence": [],
+      "event_key": "обман дольщиков",
+      "about": "",
+      "relation_path": "",
+      "verification": "quote_not_found",
+      "archive_url": "",
+      "match_score": 1.0,
+      "match_reasons": [
+        "сходство названия 100%"
+      ],
+      "source_tier": "low",
+      "source_weight": 0.4,
+      "recency_weight": 0.8,
+      "fact_id": "7262f89051",
+      "risk": 0.0144
+    }
+  ],
+  "facts": [
+    {
+      "id": "038bd0baa2",
+      "category": "procurement",
+      "status": "listed",
+      "severity": "high",
+      "claim": "Компания включена в реестр недобросовестных участников госзакупок",
+      "about": "",
+      "relation_path": "",
+      "sources": [
+        "РНУ (демо)"
+      ],
+      "corroborations": 1,
+      "strength": 1.0,
+      "recency_weight": 1.0,
+      "risk": 0.75,
+      "finding_ids": [
+        "7f993b0bb6a0"
+      ]
+    },
+    {
+      "id": "900649495b",
+      "category": "money_laundering",
+      "status": "investigation",
+      "severity": "high",
+      "claim": "Компанию подозревают в обналичивании 1,2 млрд тенге через фирмы-однодневки",
+      "about": "",
+      "relation_path": "",
+      "sources": [
+        "business-kz.example",
+        "kz-daily.example"
+      ],
+      "corroborations": 2,
+      "strength": 0.99,
+      "recency_weight": 1.0,
+      "risk": 0.4455,
+      "finding_ids": [
+        "85004afdd4d2",
+        "8347cc45059f"
+      ]
+    },
+    {
+      "id": "26a455cbbf",
+      "category": "tax",
+      "status": "convicted",
+      "severity": "high",
+      "claim": "Директор осуждён за уклонение от уплаты налогов",
+      "about": "Примеров Ержан Болатович",
+      "relation_path": "Субъект → директор: Примеров Ержан Болатович",
+      "sources": [
+        "court-archive.example"
+      ],
+      "corroborations": 1,
+      "strength": 1.0,
+      "recency_weight": 0.5,
+      "risk": 0.1875,
+      "finding_ids": [
+        "55b904600e3f"
+      ]
+    },
+    {
+      "id": "0cced4d22e",
+      "category": "regulatory",
+      "status": "civil_judgment",
+      "severity": "medium",
+      "claim": "Учредителя оштрафовали за сговор на торгах",
+      "about": "ТОО «Василёк Инвест»",
+      "relation_path": "Субъект → учредитель: ТОО «Василёк Инвест»",
+      "sources": [
+        "business-kz.example"
+      ],
+      "corroborations": 1,
+      "strength": 0.9,
+      "recency_weight": 1.0,
+      "risk": 0.162,
+      "finding_ids": [
+        "34b790bc945f"
+      ]
+    },
+    {
+      "id": "29135b4f26",
+      "category": "labor",
+      "status": "allegation",
+      "severity": "medium",
+      "claim": "Рабочие жаловались на задержку зарплаты за три месяца",
+      "about": "",
+      "relation_path": "",
+      "sources": [
+        "old-news.example"
+      ],
+      "corroborations": 1,
+      "strength": 0.63,
+      "recency_weight": 0.66,
+      "risk": 0.0748,
+      "finding_ids": [
+        "9d3efb1ed0aa"
+      ]
+    },
+    {
+      "id": "7262f89051",
+      "category": "fraud",
+      "status": "allegation",
+      "severity": "high",
+      "claim": "Утверждается, что компания обманула 300 дольщиков",
+      "about": "",
+      "relation_path": "",
+      "sources": [
+        "anon-blog.example"
+      ],
+      "corroborations": 0,
+      "strength": 0.06,
+      "recency_weight": 0.8,
+      "risk": 0.0144,
+      "finding_ids": [
+        "91ace4edee85"
+      ]
+    }
+  ],
+  "possible_namesakes": [
+    {
+      "source_type": "web",
+      "source_name": "South News (демо)",
+      "url": "https://south-news.example/2025/bankrot",
+      "title": "Компанию признали банкротом",
+      "published": "2025-08-20",
+      "category": "bankruptcy",
+      "status": "civil_judgment",
+      "severity": "high",
+      "claim": "Компания признана банкротом по иску поставщика цемента",
+      "quote": "признано банкротом по иску поставщика цемента",
+      "subject_mentioned_as": "ТОО «Ромашка Строй»",
+      "identity_evidence": [
+        "название совпадает, но город Шымкент"
+      ],
+      "event_key": "банкротство 2025",
+      "about": "",
+      "relation_path": "",
+      "verification": "verified",
+      "archive_url": "",
+      "match_score": 0.1,
+      "match_reasons": [
+        "сходство названия 100%",
+        "рядом с именем другой БИН/ИИН",
+        "в источнике другой город"
+      ],
+      "source_tier": "media",
+      "source_weight": 0.7,
+      "recency_weight": 1.0,
+      "fact_id": "",
+      "risk": 0.0
+    }
+  ],
+  "sources": [
+    {
+      "name": "Реестр недобросовестных участников госзакупок (демо)",
+      "status": "ok",
+      "hits": 1,
+      "note": ""
+    },
+    {
+      "name": "Санкционные списки (демо-выгрузка)",
+      "status": "ok",
+      "hits": 0,
+      "note": "совпадений нет"
+    },
+    {
+      "name": "Глубокий веб-поиск (Claude web search)",
+      "status": "ok",
+      "hits": 7,
+      "note": ""
+    }
+  ],
+  "queries": [
+    "\"Ромашка Строй\" Алматы уголовное дело",
+    "ТОО Ромашка Строй обналичивание однодневки",
+    "\"Ромашка Строй\" банкротство OR долг OR зарплата",
+    "Romashka Stroy LLP fraud",
+    "\"Примеров Ержан Болатович\" приговор",
+    "\"Василёк Инвест\" штраф OR суд OR РНУ"
+  ],
+  "rounds": 2,
+  "graph": {
+    "nodes": [
+      {
+        "id": "subject",
+        "name": "ТОО «Ромашка Строй»",
+        "kind": "subject",
+        "depth": 0,
+        "explored": true,
+        "sources": []
+      },
+      {
+        "id": "person:primerov erzhan bolatovich",
+        "name": "Примеров Ержан Болатович",
+        "kind": "person",
+        "depth": 1,
+        "explored": true,
+        "sources": [
+          "https://court-archive.example/cases/1-512-2019",
+          "https://kz-daily.example/2026/05/romashka-obnal"
+        ]
+      },
+      {
+        "id": "company:vasilek invest",
+        "name": "ТОО «Василёк Инвест»",
+        "kind": "company",
+        "depth": 1,
+        "explored": true,
+        "sources": [
+          "https://business-kz.example/news/48213",
+          "https://business-kz.example/news/50110"
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "src": "subject",
+        "dst": "person:primerov erzhan bolatovich",
+        "relation": "директор",
+        "source_url": "https://kz-daily.example/2026/05/romashka-obnal"
+      },
+      {
+        "src": "subject",
+        "dst": "company:vasilek invest",
+        "relation": "учредитель",
+        "source_url": "https://business-kz.example/news/48213"
+      }
+    ],
+    "mermaid": "flowchart LR\n  n0[\"ТОО «Ромашка Строй»\"]\n  n1[\"Примеров Ержан Болатович\"]\n  n2[\"ТОО «Василёк Инвест»\"]\n  n0 -->|\"директор\"| n1\n  n0 -->|\"учредитель\"| n2\n  style n0 stroke:#c0392b,stroke-width:3px\n  style n1 stroke:#c0392b,stroke-width:2px\n  style n2 stroke:#c0392b,stroke-width:2px"
+  }
+}

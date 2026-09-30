@@ -9,6 +9,7 @@ import re
 from datetime import date
 from urllib.parse import urlsplit
 
+from config import settings
 from models import Finding, Status
 
 TIER_WEIGHT = {"registry": 1.0, "official": 1.0, "major_media": 0.9, "media": 0.7, "low": 0.4}
@@ -38,11 +39,12 @@ def source_tier(f: Finding) -> str:
         return "registry"
     host = (urlsplit(f.url).hostname or "").lower()
     d = domain(f.url)
-    if d in OFFICIAL or host.endswith(".gov.kz") or host.endswith(".gov"):
+    # The *_EXTRA settings extend the lists without a code change (the team's own policy).
+    if d in OFFICIAL | set(settings.OFFICIAL_EXTRA) or host.endswith(".gov.kz") or host.endswith(".gov"):
         return "official"
-    if d in MAJOR_MEDIA:
+    if d in MAJOR_MEDIA | set(settings.MAJOR_MEDIA_EXTRA):
         return "major_media"
-    if d in LOW or host.startswith("forum.") or "/forum" in f.url:
+    if d in LOW | set(settings.LOW_EXTRA) or host.startswith("forum.") or "/forum" in f.url:
         return "low"
     return "media"
 
@@ -65,7 +67,7 @@ def recency_weight(f: Finding, today: date | None = None) -> float:
     year = published_year(f.published)
     if year is None:
         return 0.8
-    age = (today or date.today()).year - year
+    age = (today or settings.REFERENCE_DATE or date.today()).year - year
     if age <= 2:
         return 1.0
     return round(max(0.3, 0.5 ** ((age - 2) / 5)), 3)

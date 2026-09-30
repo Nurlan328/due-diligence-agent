@@ -131,7 +131,7 @@ def _birth_evidence(subject: Subject, near: str, published: str) -> tuple[bool, 
             else:
                 conflict = True
     pub = re.search(r"(?:19|20)\d\d", published or "")
-    now = int(pub.group()) if pub else date.today().year
+    now = int(pub.group()) if pub else (settings.REFERENCE_DATE or date.today()).year
     for pattern in _AGE:
         for m in pattern.finditer(near):
             implied = now - int(m.group(1))
