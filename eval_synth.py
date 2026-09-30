@@ -267,10 +267,30 @@ def n_initials_same_city(p, rng):
                         f"{filler(rng)}"), 0
 
 
+def _other_person_iin(rng: random.Random) -> tuple[str, str]:
+    """A co-defendant: '<Surname> X.Y.' and an ИИН that is not the subject's."""
+    other = new_person(rng)
+    return other.initials, other.iin
+
+
+# Added with matcher v3, after holdout v1 exposed them (see README): developed on dev only.
+def p_codefendants_iins(p, rng):
+    (a, a_iin), (b, b_iin) = _other_person_iin(rng), _other_person_iin(rng)
+    return p.initials, (f"В {p.city[1]} по делу проходят трое: {a} (ИИН {a_iin}), {p.initials} и {b} "
+                        f"(ИИН {b_iin}). Все они работали в ТОО «{p.company}»."), 1
+
+
+def n_other_given_context(p, rng):
+    given = other(rng, FEMALE_GIVEN if p.female else MALE_GIVEN, p.given)
+    m = f"{p.surname_g} {given}"
+    return m, (f"В {p.city[1]} {m}, сотрудник ТОО «{p.company}», {ev(p, rng.randrange(len(EVENTS)))}. "
+               f"{filler(rng)}"), 0
+
+
 PERSON_TRAPS = [p_full_city, p_order_given_surname, p_initials_context, p_latin, p_kazakh_patronymic,
                 p_iin_in_text, p_surname_role, p_full_bare, n_surname_only, n_other_given, n_initial_collision,
                 n_full_other_city_age, n_full_other_iin, n_similar_surname, n_other_patronymic,
-                n_initials_same_city]
+                n_initials_same_city, p_codefendants_iins, n_other_given_context]
 
 
 # --- company traps -----------------------------------------------------------------------------

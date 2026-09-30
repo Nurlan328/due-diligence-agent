@@ -189,10 +189,14 @@ pytest
 - **Golden set** (`evals/golden_identity.jsonl`): 20 hand-written cases with what
   templates don't produce: inflected names, the city as an adjective, English
   and Kazakh articles, a short common surname (Ким), an unreachable page.
-- **Holdout set** (`evals/holdout_identity.jsonl`): 18 hand-written cases written
-  *after* the v2 rules and never used to change them. It includes traps for the
-  new features themselves: a subject arrested in another city, co-defendants'
-  ИИН next to the subject's name, a dated article with an age.
+- **Holdout sets**, hand-written, each written *before* the matcher version it
+  tests and never used to tune that version:
+  - `evals/holdout_identity.jsonl` (18 cases) tested v2. Its errors then drove v3,
+    so for v3 it is marked *used* and no longer independent.
+  - `evals/holdout2_identity.jsonl` (16 cases) was written before the v3 changes.
+    It includes traps for the new rules themselves: co-defendants' ИИН, a
+    contractor's БИН next to the subject, another given name in the same
+    company, «Ghalym», and a partner's ИИН introduced in words.
 
 ```bash
 python eval_synth.py      # data/eval/identity_synth.jsonl
@@ -210,33 +214,42 @@ labels in `data/match_features.jsonl` (`python evaluate.py --match-log ...`).
 |---|---|---|---|---|---|
 | v1 (only evidence for, no morphology) | test | 0.65 | 0.96 | 0.51 | 0.75 |
 | v1 | golden | 0.59 | 0.91 | 0.78 | 0.81 |
-| v2 without evidence against (ablation) | test | 0.71 | 1.00 | 0.41 | 0.79 |
-| **v2** | test | 1.00 | 1.00 | **0.00** | 1.00 |
-| **v2** | fresh seed 101 | 1.00 | 1.00 | **0.003** | 1.00 |
-| **v2** | golden | 1.00 | 1.00 | **0.00** | 1.00 |
-| **v2** | holdout | 1.00 | 0.90 | **0.00** | 0.91 |
+| v2 | holdout (then unseen) | 1.00 | 0.90 | 0.00 | 0.91 |
+| v3 without evidence against (ablation) | test | 0.73 | 1.00 | 0.39 | 0.79 |
+| **v3** | test | 1.00 | 0.99 | **0.00** | 1.00 |
+| **v3** | fresh seed 101 | 1.00 | 0.99 | **0.00** | 0.99 |
+| **v3** | golden | 1.00 | 1.00 | **0.00** | 1.00 |
+| **v3** | **holdout2 (unseen)** | 1.00 | 0.89 | **0.00** | 0.91 |
 
-v1 numbers are from the commit that introduced the eval. The ablation shows
-where the gain comes from. Morphology (pymorphy3 lemmas, the city dictionary)
-and the stricter surname bar lift recall to 1.0. The evidence-against features
-bring namesake leak from 0.41 to 0. v1 only collected evidence for a match, so a
-full namesake from another city scored 1.0.
+v1 numbers are from the commit that introduced the eval; v2 from the commit
+after it. What each version added:
+
+- **v2**: morphology (pymorphy3 lemmas, the city dictionary) and a stricter
+  surname bar lift recall. Evidence against (another БИН/ИИН, city, age,
+  patronymic near the name) brings namesake leak from 0.41 (ablation) to 0. v1
+  only collected evidence for a match, so a full namesake from another city
+  scored 1.0.
+- **v3** fixes what v2's holdout and fresh draw exposed. A БИН/ИИН now belongs to
+  the nearest entity before it (another surname or a legal form starts a new
+  entity), so co-defendants' or a contractor's numbers no longer count against
+  the subject. Another spelled-out given name is a contradiction. Ғ = gh. These
+  failure types were added to the generator and fixed on dev only.
 
 **Read the perfect scores with suspicion.** The rules were written after
-reading v1's errors on these trap types, and the synthetic sets come from the
-same generator. The holdout set is the most honest number, and it still has a
-real error. The known failures:
+reading earlier errors on these trap types, and the synthetic sets come from
+the same generator. The unseen hand-written holdout is the honest number, and it
+still has an error. The known failures:
 
-- **h-03, co-defendants' ИИН**: "Толеубаев С.М., Касымов Е.Н. (ИИН …)". Another
-  person's ИИН sits next to the subject's name and is taken as a contradiction.
-  Fix: attribute each ИИН to the nearest name instead of the whole window.
-- **fresh seed, «Ghalym»**: Ғ romanised as "gh" is not folded to "g".
-- **fresh seed, surname + related company + city** adds up to exactly 0.5 for a
-  different given name. The additive score has no notion that "another given
-  name" is itself a contradiction.
+- **h2-15, the owner of an ИИН named in words**: "Байжанов Е.К. и его партнёр по
+  бизнесу, ИИН которого …". No surname stands between the subject and the
+  number, so the ИИН is attributed to the subject.
+- **fresh seed, co-defendant with the same surname**: "Султанов Б.А. (ИИН …),
+  Султанов Е.А.". Attribution looks at the surname only. Fix: compare the
+  initials after the surname too. Found on the test draw, so left unfixed here to
+  keep that draw honest.
 
-Next: fix these without touching the holdout, then a learned matcher on real
-reviewer labels, compared with this baseline.
+Next: a learned matcher on real reviewer labels, compared with this baseline.
+Every new rule version needs a new holdout written before it.
 
 ## Cost
 
@@ -250,8 +263,8 @@ effort. `MAX_ROUNDS`, `SEARCHES_PER_ROUND`, `FETCHES_PER_ROUND`,
 
 ## Roadmap
 
-- **Matcher fixes** from the holdout errors above: ИИН attributed to the nearest
-  name, Ғ → gh, another given name as a contradiction.
+- **Matcher fixes** from the known failures above (initials in ИИН attribution,
+  owners introduced in words), with a new holdout written first.
 - **End-to-end evaluation set.** Real labelled subjects: positives from
   OpenSanctions (KZ) and the РНУ, negatives from random registered companies.
   Metrics: finding precision / recall, fabricated-quote rate, fact grouping

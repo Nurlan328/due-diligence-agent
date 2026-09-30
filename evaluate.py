@@ -10,11 +10,12 @@ score). Negative = a namesake (it must go to "possible namesakes").
 
 Matchers compared: `name_only` (name similarity alone, the naive baseline),
 `heuristic_for_only` (ablation: v2 without the evidence-against features) and
-`heuristic` (matching.py v2).
+`heuristic` (matching.py).
 
 The threshold is tuned on dev only. Reported on: the synthetic test split, a
 second synthetic draw with another seed, the hand-written golden set and the
-hand-written holdout set (written after the v2 rules, never used to change them).
+hand-written holdout sets: holdout (its errors drove v3, so no longer independent)
+and holdout2 (written before v3, never used to change it).
 All are synthetic: they check the matcher's logic, not real-world accuracy. For
 that, label real findings in data/match_features.jsonl (label 1 / 0) and run
 with --match-log.
@@ -38,6 +39,7 @@ from names import name_similarity
 SYNTH_PATH = Path(settings.DATA_DIR) / "eval" / "identity_synth.jsonl"
 GOLDEN_PATH = Path("evals") / "golden_identity.jsonl"
 HOLDOUT_PATH = Path("evals") / "holdout_identity.jsonl"
+HOLDOUT2_PATH = Path("evals") / "holdout2_identity.jsonl"
 FRESH_SEED = 101  # a second synthetic draw nobody looked at while writing the rules
 RESULTS_PATH = Path("evals") / "RESULTS.md"
 
@@ -191,11 +193,12 @@ def evaluate_sets(synth: list[dict], hand: dict[str, list[dict]], fresh: list[di
            "namesake. *Namesake leak* = share of namesakes that pass the threshold and would enter the risk "
            "score.", "",
            f"Sets: dev {len(dev)} (threshold tuning, rule development), {sizes}. The synthetic sets come "
-           "from `eval_synth.py`; golden and holdout are hand-written (`evals/*.jsonl`); holdout was written "
-           "after the v2 rules and never used to change them. All are fictional: they test the matcher's "
-           "logic, not real-world accuracy.", "",
+           "from `eval_synth.py`; golden and the holdouts are hand-written (`evals/*.jsonl`). *holdout (used)* was "
+           "written after v2 and its errors drove v3, so it is no longer independent; *holdout2* was written "
+           "before the v3 changes and never used to change them: it is the honest number. All are fictional: "
+           "they test the matcher's logic, not real-world accuracy.", "",
            "Matchers: `name_only` (name similarity), `heuristic_for_only` (v2 with the evidence-against "
-           "features switched off, an ablation), `heuristic` (v2, matching.py).", "",
+           "features switched off, an ablation), `heuristic` (matching.py, v3).", "",
            f"## At the configured threshold (MATCH_THRESHOLD = {thr})", "", HEADER]
     for name in MATCHERS:
         for set_name, cases in tests.items():
@@ -254,6 +257,7 @@ def main() -> None:
     p.add_argument("--synth", default=str(SYNTH_PATH))
     p.add_argument("--golden", default=str(GOLDEN_PATH))
     p.add_argument("--holdout", default=str(HOLDOUT_PATH))
+    p.add_argument("--holdout2", default=str(HOLDOUT2_PATH))
     p.add_argument("--match-log", help="evaluate on reviewer-labelled rows of match_features.jsonl instead")
     p.add_argument("--no-write", action="store_true", help=f"print only, do not update {RESULTS_PATH}")
     args = p.parse_args()
@@ -269,7 +273,8 @@ def main() -> None:
         with synth_path.open("w", encoding="utf-8") as f:
             for c in eval_synth.generate():
                 f.write(json.dumps(c, ensure_ascii=False) + "\n")
-    hand = {"golden": load(Path(args.golden)), "holdout": load(Path(args.holdout))}
+    hand = {"golden": load(Path(args.golden)), "holdout (used)": load(Path(args.holdout)),
+            "holdout2": load(Path(args.holdout2))}
     report = evaluate_sets(load(synth_path), hand, fresh=eval_synth.generate(seed=FRESH_SEED))
     print(report)
     if not args.no_write:

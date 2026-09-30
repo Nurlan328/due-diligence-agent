@@ -45,7 +45,7 @@ def test_split_is_by_subject():
 
 
 def test_every_case_builds_domain_objects():
-    for c in eval_synth.generate(per_trap=2, seed=3) + load(GOLDEN_PATH) + load(evaluate.HOLDOUT_PATH):
+    for c in eval_synth.generate(per_trap=2, seed=3) + load(GOLDEN_PATH) + load(evaluate.HOLDOUT_PATH) + load(evaluate.HOLDOUT2_PATH):
         Subject(**c["subject"])
         f = Finding(**c["finding"])
         assert f.subject_mentioned_as

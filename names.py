@@ -36,6 +36,8 @@ _TRANSLIT = {
 _SKELETON_RULES = [
     # Ё is "yo" in Latin and folded to е in Cyrillic; word-initial Е is "Ye" in passports (Yerlan).
     (r"yo", "e"), (r"\bye", "e"),
+    # Ғ is romanised "gh" (Ghalym) as well as "g" (Galym).
+    (r"gh", "g"),
     (r"shch", "sh"), (r"kh", "h"), (r"q", "k"), (r"yu", "u"), (r"ya", "a"), (r"iy", "i"),
     (r"y", "i"), (r"j", "zh"), (r"w", "u"), (r"x", "ks"), (r"(.)\1", r"\1"),
 ]
@@ -239,6 +241,27 @@ def patronymic_conflict(subject_name: str, mention: str) -> bool:
         return False
     roots = [r for t in fold(mention).split() if (r := patronymic_root(t))]
     return bool(roots) and father not in roots
+
+
+# Words that can precede a name in a mention and are not a given name.
+_ROLE_WORDS = {"директор", "руководитель", "учредитель", "бухгалтер", "главврач", "главный", "врач", "аким",
+               "депутат", "предприниматель", "бизнесмен", "гражданин", "гражданка", "господин", "госпожа",
+               "г", "mr", "mrs", "ms", "dr", "head", "director", "ceo", "founder", "businessman"}
+
+
+def given_name_conflict(subject_name: str, mention: str) -> bool:
+    """The surname matches, but the source spells out a different given name
+    ("Байжанов Нурлан" for Байжанов Ерболат). Initials are not a conflict."""
+    subj = fold(subject_name).split()
+    if len(subj) < 2:
+        return False
+    surname, given = subj[0], subj[1]
+    tokens = fold(mention).split()
+    if not any(token_match(t, surname) for t in tokens):
+        return False
+    others = [t for t in tokens if len(t) > 1 and t not in _ROLE_WORDS
+              and not token_match(t, surname) and not patronymic_root(t)]
+    return bool(others) and not any(token_match(t, given) for t in others)
 
 
 def name_similarity(subject: Subject, mention: str) -> tuple[float, str]:

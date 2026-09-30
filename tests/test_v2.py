@@ -292,3 +292,39 @@ def test_archive_down_trips_circuit_breaker():
     verify_findings(fs, http=httpx.Client(transport=httpx.MockTransport(handler)), archive=True)
     assert calls["archive"] == 1
     assert all(f.verification == Verification.UNREACHABLE for f in fs)
+
+
+# --- matcher v3 ----------------------------------------------------------------------------------
+
+def test_id_belongs_to_the_nearest_entity():
+    from matching import subject_ids
+    from names import fold
+    p = person()
+    text = "По делу проходят Толеубаев С.М., Касымов Е.Н. (ИИН 790211300158) и Садыкова Ж.А. (ИИН 880305400213)."
+    assert subject_ids(p, fold(text)) == set()
+    assert subject_ids(p, fold("Толеубаев С.М. (ИИН 610101300111), должник")) == {"610101300111"}
+    assert subject_ids(p, fold("ИИН 830709300456 — Толеубаев С.М.")) == {"830709300456"}
+
+
+def test_company_bin_attribution():
+    from matching import subject_ids
+    from names import fold
+    c = Subject(type="company", name="ТОО «Тюльпан Энерго»", purpose="Проверка поставщика перед договором")
+    text = "Подрядчик ТОО «Лютик Сервис» (БИН 180540099111) и заказчик ТОО «Тюльпан Энерго» проверяются."
+    assert subject_ids(c, fold(text)) == set()
+    assert subject_ids(c, fold("ТОО «Тюльпан Энерго» (БИН 200140055666), Павлодар")) == {"200140055666"}
+
+
+def test_given_name_conflict():
+    from names import given_name_conflict
+    full = "Байжанов Ерболат Кайратович"
+    assert given_name_conflict(full, "Байжанов Нурлан")
+    assert given_name_conflict(full, "Nurlan Baizhanov")
+    assert not given_name_conflict(full, "Байжанов Е.К.")  # initials are not a conflict
+    assert not given_name_conflict(full, "Байжанов")
+    assert not given_name_conflict(full, "директор Байжанов Ерболат")
+    assert not given_name_conflict(full, "Сериков Нурлан")  # another surname: not this feature's job
+
+
+def test_gh_romanisation():
+    assert token_match("Ghalym", "Ғалым") and token_match("Galym", "Ғалым")
