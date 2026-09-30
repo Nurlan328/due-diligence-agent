@@ -1,0 +1,7 @@
+anthropic>=1.9,<2   # Claude API: deep search agent (web_search / web_fetch server tools)
+fastapi[standard]
+pydantic-settings
+httpx               # page fetches for quote verification, goszakup API
+trafilatura         # main-text extraction from news pages
+rapidfuzz           # fuzzy name and quote matching
+pytest

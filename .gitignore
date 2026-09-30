@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.idea/
+.pytest_cache/
+
+# Sanctions export (re-download: python cli.py update-sanctions), audit and match logs.
+data/
+
+# Screening reports hold personal data: never commit them.
+reports/
